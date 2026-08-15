@@ -5,10 +5,10 @@ schemaVersion = "0.0.1"
 repository = "https://thunderstore.io"
 
 [package]
-namespace = "jkqt"
-name = "ItemInfoDisplay"
+namespace = "vergir"
+name = "VeeItemInfo"
 description = "Displays item information."
-websiteUrl = "https://github.com/jkqt/ItemInfoDisplay"
+websiteUrl = "https://github.com/Vergir/PEAK-VeeItemInfo"
 containsNsfwContent = false
 
 [package.dependencies]
@@ -20,7 +20,7 @@ readme = "../../README.md"
 outdir = "../../artifacts/thunderstore/"
 
 [[build.copy]]
-source = "../../artifacts/bin/ItemInfoDisplay/release/com.github.jkqt.ItemInfoDisplay.dll"
+source = "../../artifacts/bin/VeeItemInfo/release/com.github.vergir.VeeItemInfo.dll"
 target = "plugins/"
 
 [[build.copy]]
