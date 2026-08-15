@@ -12,6 +12,12 @@ internal static class ItemInfoController
     private static bool dirty = true;
     private static float lastKnownSinceItemAttach;
 
+    /// <summary>Flags the overlay as stale, rebuilding it on the next tick.</summary>
+    internal static void MarkDirty()
+    {
+        dirty = true;
+    }
+
     /// <summary>Flags the overlay as stale, but only for the character we're watching.</summary>
     internal static void MarkDirtyIfObserved(Character? character)
     {

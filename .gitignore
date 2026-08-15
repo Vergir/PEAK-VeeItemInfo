@@ -226,3 +226,6 @@ artifacts/**/*.zip
 *.txt
 artifacts/**
 Config.Build.user.props
+
+# AI agent working notes, local only
+AGENTS.md
