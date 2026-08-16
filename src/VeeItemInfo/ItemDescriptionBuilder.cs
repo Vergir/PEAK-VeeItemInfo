@@ -22,6 +22,15 @@ namespace VeeItemInfo;
 /// </summary>
 internal static class ItemDescriptionBuilder
 {
+    /// <summary>
+    /// What Affliction_HealAll treats, in its own order. maxHealing is a budget shared
+    /// across all six rather than an allowance for each.
+    /// </summary>
+    private static readonly string[] HealAllStatuses =
+    {
+        "Injury", "Spores", "Poison", "Cold", "Hot", "Drowsy",
+    };
+
     internal static string Build(Item item)
     {
         GameObject itemGameObj = item.gameObject;
@@ -215,6 +224,41 @@ internal static class ItemDescriptionBuilder
                 // spans 50 at full status to 105 at none - more damage the healthier you are.
                 layout.Add(Block.Status, EffectFormatter.Colored("2.5", "Poison") + " + "
                     + EffectFormatter.Colored("50-105", "Poison") + " / " + EffectFormatter.Num(effect.totalPoisonTime) + "s");
+            }
+            else if (itemComponents[i].GetType() == typeof(Peak.Action_HealingGem))
+            {
+                Peak.Action_HealingGem effect = (Peak.Action_HealingGem)itemComponents[i];
+
+                // Heals a shared budget across six statuses at once, so the amount is white
+                // rather than any one status colour, and the icons say which are eligible.
+                layout.Add(Block.Status, EffectColors.White + "-"
+                    + EffectFormatter.Scaled(effect.healingAffliction.maxHealing) + "</color> "
+                    + EffectFormatter.IconList(HealAllStatuses));
+
+                if (effect.invincibilityAffliction != null)
+                {
+                    layout.Add(Block.Status, EffectFormatter.Num(effect.invincibilityAffliction.totalTime)
+                        + "s " + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>");
+                }
+
+                // Petrify scales with how much healing was actually possible, clamped to
+                // this range, so a range is the honest thing to show.
+                layout.Add(Block.Status, EffectColors.Get("Petrify") + "+"
+                    + EffectFormatter.Scaled(effect.minPetrify) + "-" + EffectFormatter.Scaled(effect.maxPetrify)
+                    + "</color> " + StatusIcons.Tag("Petrify"));
+            }
+            else if (itemComponents[i].GetType() == typeof(Peak.Action_CloneSelectedItem))
+            {
+                Peak.Action_CloneSelectedItem effect = (Peak.Action_CloneSelectedItem)itemComponents[i];
+                string generic = StatusIcons.Tag("Item");
+
+                layout.Add(Block.Note, generic + EffectFormatter.Arrow + generic + generic);
+                // AddPetrify takes whole points on the 0-100 scale, unlike almost everything
+                // else here, so these are already display units. The two values are discrete
+                // - plain items versus mystical ones - so a slash, not a range.
+                layout.Add(Block.Status, EffectColors.Get("Petrify") + "+"
+                    + EffectFormatter.Num(effect.petrify) + "/" + EffectFormatter.Num(effect.petrifyMystical)
+                    + "</color> " + StatusIcons.Tag("Petrify"));
             }
             // Amulets are matched with 'is' rather than an exact type check: they all derive
             // from AmuletBase and each applies petrify through a different path.

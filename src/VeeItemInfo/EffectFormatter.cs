@@ -41,6 +41,24 @@ internal static class EffectFormatter
     internal static string Colored(string value, string effect) =>
         EffectColors.Get(effect) + value + " " + StatusIcons.Tag(effect) + "</color>";
 
+    /// <summary>Separates the two halves of a transformation, as in "item -> item item".</summary>
+    internal const string Arrow = " → ";
+
+    /// <summary>
+    /// A run of status icons, each in its own colour, slash-separated. For effects that hit
+    /// a whole set of statuses rather than one.
+    /// </summary>
+    internal static string IconList(string[] statuses)
+    {
+        string[] tokens = new string[statuses.Length];
+        for (int i = 0; i < statuses.Length; i++)
+        {
+            tokens[i] = EffectColors.Get(statuses[i]) + StatusIcons.Tag(statuses[i]) + "</color>";
+        }
+
+        return string.Join(EffectColors.White + "/</color>", tokens);
+    }
+
     /// <summary>An instant status change, e.g. "+25 &lt;food&gt;".</summary>
     internal static string Effect(float amount, string effect)
     {

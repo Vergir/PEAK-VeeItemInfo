@@ -11,6 +11,9 @@ internal static class EffectColors
 {
     /// <summary>Used for plain descriptive text, and as the fallback for unknown statuses.</summary>
     internal const string Neutral = "<#CCCCCC>";
+
+    /// <summary>For a value that applies to several statuses at once and so belongs to none.</summary>
+    internal const string White = "<#FFFFFF>";
     internal const string Positive = "<#DDFFDD>";
     internal const string Negative = "<#FFCCCC>";
 

@@ -116,7 +116,7 @@ internal static class StatusIcons
             return;
         }
 
-        List<(string Name, Sprite Sprite)> icons = new();
+        List<IconSource> icons = new();
         HashSet<string> seen = new();
 
         foreach (BarAffliction bar in bars)
@@ -132,7 +132,7 @@ internal static class StatusIcons
             string name = bar.isPetrify ? "Petrify" : bar.afflictionType.ToString();
             if (seen.Add(name))
             {
-                icons.Add((name, sprite));
+                icons.Add(IconSource.FromSprite(name, sprite));
             }
         }
 
@@ -141,7 +141,15 @@ internal static class StatusIcons
         Sprite? staminaIcon = staminaBar?.extraStaminaIcon?.sprite;
         if (staminaIcon != null && seen.Add("ExtraStamina"))
         {
-            icons.Add(("ExtraStamina", staminaIcon));
+            icons.Add(IconSource.FromSprite("ExtraStamina", staminaIcon));
+        }
+
+        // A stand-in for "some item", used where a description needs to talk about an item
+        // without naming one. BingBong is the game's own mascot and reads as generic.
+        Texture2D? genericItem = FindItemIcon("BingBong");
+        if (genericItem != null && seen.Add("Item"))
+        {
+            icons.Add(IconSource.FromTexture("Item", genericItem));
         }
 
         if (icons.Count == 0)
@@ -152,7 +160,62 @@ internal static class StatusIcons
         BuildAtlas(icons);
     }
 
-    private static void BuildAtlas(List<(string Name, Sprite Sprite)> icons)
+    /// <summary>
+    /// An icon to pack, whatever it came from. Status icons arrive as Sprites carrying a
+    /// sub-rect of a texture; item icons arrive as bare Texture2Ds where the whole texture
+    /// is the icon.
+    /// </summary>
+    private readonly struct IconSource
+    {
+        private IconSource(string name, Texture texture, Rect region)
+        {
+            Name = name;
+            Texture = texture;
+            Region = region;
+        }
+
+        internal string Name { get; }
+
+        internal Texture Texture { get; }
+
+        internal Rect Region { get; }
+
+        internal static IconSource FromSprite(string name, Sprite sprite) =>
+            new(name, sprite.texture, sprite.textureRect);
+
+        internal static IconSource FromTexture(string name, Texture2D texture) =>
+            new(name, texture, new Rect(0f, 0f, texture.width, texture.height));
+    }
+
+    /// <summary>
+    /// Looks up an item's icon by prefab name through the game's own item database. Used for
+    /// descriptions that need to show an item rather than a status.
+    /// </summary>
+    private static Texture2D? FindItemIcon(string nameContains)
+    {
+        // Resources rather than a singleton accessor: the database is a loaded
+        // ScriptableObject either way, and this needs no guess at the accessor's shape.
+        foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
+        {
+            if (database.itemLookup == null)
+            {
+                continue;
+            }
+
+            foreach (Item entry in database.itemLookup.Values)
+            {
+                if (entry != null && entry.UIData != null
+                    && entry.name.IndexOf(nameContains, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return entry.UIData.GetIcon();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static void BuildAtlas(List<IconSource> icons)
     {
         Shader shader = Shader.Find("TextMeshPro/Sprite");
         if (shader == null)
@@ -167,7 +230,7 @@ internal static class StatusIcons
         {
             for (int i = 0; i < icons.Count; i++)
             {
-                copies[i] = MakeReadable(icons[i].Sprite.texture);
+                copies[i] = MakeReadable(icons[i].Texture);
             }
 
             atlas = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false);
@@ -201,14 +264,15 @@ internal static class StatusIcons
 
             for (int i = 0; i < icons.Count; i++)
             {
-                (string name, Sprite sprite) = icons[i];
+                IconSource source = icons[i];
+                string name = source.Name;
                 Rect uv = uvs[i];
 
                 // PackTextures may shrink a texture to make it fit, so map the sprite's
                 // region through the same scale rather than assuming 1:1.
                 float packedWidth = uv.width * atlas.width;
                 float scale = packedWidth / copies[i].width;
-                Rect region = sprite.textureRect;
+                Rect region = source.Region;
 
                 int x = Mathf.RoundToInt(uv.x * atlas.width + region.x * scale);
                 int y = Mathf.RoundToInt(uv.y * atlas.height + region.y * scale);

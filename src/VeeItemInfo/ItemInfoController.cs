@@ -81,6 +81,7 @@ internal static class ItemInfoController
 
         if (PluginConfig.DebugLogging.Value)
         {
+            ItemDebug.LogItem(item);
             Overlay.LogDiagnostics();
             StatusIcons.LogDiagnostics();
         }
