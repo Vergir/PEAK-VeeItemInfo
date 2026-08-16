@@ -27,6 +27,7 @@ internal static class StatusIcons
 {
     private static readonly Dictionary<string, string> Tags = new();
     private static readonly List<TMP_SpriteGlyph> Glyphs = new();
+    private static readonly List<float> Aspects = new();
     private static TMP_SpriteAsset? spriteAsset;
     private static Texture2D? atlas;
 
@@ -36,6 +37,12 @@ internal static class StatusIcons
     // for it rather than scanning the scene forever.
     private const int MaxAttempts = 15;
     private const float RetryInterval = 2f;
+
+    /// <summary>
+    /// Roughly the middle of an upper-case glyph, in em above the baseline. PEAK's HUD font
+    /// is all caps, so this is what an icon should line up with.
+    /// </summary>
+    private const float CapCentre = 0.36f;
     private static int attempts;
     private static float nextAttempt;
 
@@ -186,14 +193,9 @@ internal static class StatusIcons
                 int w = Mathf.Max(1, Mathf.RoundToInt(region.width * scale));
                 int h = Mathf.Max(1, Mathf.RoundToInt(region.height * scale));
 
-                // Normalise against height so every icon renders at the same visual size
-                // as a line of text, whatever its source resolution.
-                float aspect = (float)w / h;
-
                 TMP_SpriteGlyph glyph = new TMP_SpriteGlyph
                 {
                     index = (uint)i,
-                    metrics = new GlyphMetrics(aspect, 1f, 0f, 0.8f, aspect),
                     glyphRect = new GlyphRect(x, y, w, h),
                     scale = 1f,
                     atlasIndex = 0,
@@ -202,6 +204,9 @@ internal static class StatusIcons
                 asset.spriteGlyphTable.Add(glyph);
                 asset.spriteCharacterTable.Add(new TMP_SpriteCharacter(0u, asset, glyph) { name = name });
                 Glyphs.Add(glyph);
+                // Normalise against height so every icon renders at the same visual size,
+                // whatever its source resolution. ApplyScale turns this into real metrics.
+                Aspects.Add((float)w / h);
                 Tags[name] = $"<sprite name=\"{name}\" tint=1>";
             }
 
@@ -238,9 +243,19 @@ internal static class StatusIcons
     internal static void ApplyScale()
     {
         float scale = PluginConfig.IconScale.Value;
-        foreach (TMP_SpriteGlyph glyph in Glyphs)
+
+        for (int i = 0; i < Glyphs.Count; i++)
         {
-            glyph.scale = scale;
+            float height = scale;
+            float width = Aspects[i] * scale;
+
+            // Vertical placement is the bearing: how far the glyph's top sits above the
+            // baseline. Centring the icon on the middle of the cap height keeps it level
+            // with the digits at any size, which sizing alone does not - scaling a fixed
+            // bearing just drags the icon down toward the baseline as it shrinks.
+            float bearingY = CapCentre + (height * 0.5f) + PluginConfig.IconOffset.Value;
+
+            Glyphs[i].metrics = new GlyphMetrics(width, height, 0f, bearingY, width);
         }
     }
 

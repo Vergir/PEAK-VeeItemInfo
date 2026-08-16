@@ -87,9 +87,10 @@ internal static class ItemDescriptionBuilder
             else if (itemComponents[i].GetType() == typeof(Action_AddOrRemoveThorns))
             {
                 Action_AddOrRemoveThorns effect = (Action_AddOrRemoveThorns)itemComponents[i];
-                // CharacterAfflictions.UpdateWeight sets Thorns to 0.025 per thorn increment
-                // (verified against 2.1.a). The original 0.05 here was a guess, and doubled it.
-                prefixStatus += EffectFormatter.Effect(effect.thornCount * 0.025f, "Thorns");
+                // UpdateWeight sets Thorns to 0.025 per *increment* returned by
+                // GetTotalThornStatusIncrements, and in-game testing on Prickleberry shows a
+                // thorn is worth two of those - 2 thorns read as 10, not 5. So 0.05 per thorn.
+                prefixStatus += EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns");
             }
             else if (itemComponents[i].GetType() == typeof(Action_ModifyStatus))
             {
