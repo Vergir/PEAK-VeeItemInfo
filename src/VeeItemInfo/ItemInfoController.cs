@@ -48,6 +48,8 @@ internal static class ItemInfoController
                 return;
             }
 
+            Overlay.EnsureIcons();
+
             if (dirty)
             {
                 dirty = false;
@@ -61,6 +63,10 @@ internal static class ItemInfoController
                 lastKnownSinceItemAttach = observed.data.sinceItemAttach;
             }
 
+            // Positioned after the text is built, so the box is sized to the current
+            // content. Follows the slot holding this item, so the overlay moves with the
+            // selection and holds through resolution and aspect ratio changes.
+            Overlay.UpdatePosition(item);
             Overlay.SetVisible(true);
         }
         catch (Exception e)
@@ -72,5 +78,11 @@ internal static class ItemInfoController
     private static void Refresh(Item item)
     {
         Overlay.SetText(ItemDescriptionBuilder.Build(item));
+
+        if (PluginConfig.DebugLogging.Value)
+        {
+            Overlay.LogDiagnostics();
+            StatusIcons.LogDiagnostics();
+        }
     }
 }

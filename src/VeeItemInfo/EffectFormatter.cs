@@ -19,18 +19,29 @@ internal static class EffectFormatter
     internal static string Scaled(float value) => Num(value * 100f);
 
     /// <summary>
-    /// The "GAIN"/"REMOVE" prefix and its colour. Extra Stamina is the one effect where
-    /// gaining is good news, so its polarity is inverted against everything else.
+    /// A signed, coloured amount followed by the status icon - "+30 &lt;flame&gt;".
+    ///
+    /// The sign states which way the status moves, so no wording is needed and the line
+    /// reads the same in any language. Colour comes from the status itself rather than
+    /// from whether the change is good for you: the icon already carries that meaning,
+    /// and tying colour to the status keeps it consistent with the game's own bars.
     /// </summary>
-    private static string GainOrRemove(float amount, string effect)
-    {
-        bool isGain = amount > 0f;
-        bool beneficial = effect.Equals("Extra Stamina") ? isGain : !isGain;
-        return (beneficial ? EffectColors.Positive : EffectColors.Negative)
-            + (isGain ? "GAIN" : "REMOVE") + "</color> ";
-    }
+    internal static string Token(float amount, string effect) =>
+        Colored((amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect);
 
-    /// <summary>An instant status change, e.g. "GAIN 25 HUNGER".</summary>
+    /// <summary>An unsigned amount and its icon, for values that have no direction.</summary>
+    internal static string Plain(float amount, string effect) =>
+        Colored(Num(amount), effect);
+
+    /// <summary>
+    /// A value and its status icon in the status colour. The icon sits inside the colour
+    /// span on purpose: its tag carries tint=1, so it takes that colour too and the icon
+    /// always matches the number beside it.
+    /// </summary>
+    internal static string Colored(string value, string effect) =>
+        EffectColors.Get(effect) + value + " " + StatusIcons.Tag(effect) + "</color>";
+
+    /// <summary>An instant status change, e.g. "+25 &lt;food&gt;".</summary>
     internal static string Effect(float amount, string effect)
     {
         if (amount == 0f)
@@ -38,11 +49,10 @@ internal static class EffectFormatter
             return "";
         }
 
-        return GainOrRemove(amount, effect)
-            + EffectColors.Get(effect) + Scaled(Mathf.Abs(amount)) + " " + effect.ToUpper() + "</color>\n";
+        return Token(amount, effect) + "\n";
     }
 
-    /// <summary>A status change spread over time, e.g. "GAIN 40 POISON OVER 8s".</summary>
+    /// <summary>A status change spread over time, e.g. "+40 &lt;skull&gt; 8s".</summary>
     internal static string EffectOverTime(float amountPerSecond, float rate, float time, string effect)
     {
         if (amountPerSecond == 0f || time == 0f)
@@ -50,9 +60,8 @@ internal static class EffectFormatter
             return "";
         }
 
-        float total = Mathf.Abs(amountPerSecond) * time * (1f / rate);
-        return GainOrRemove(amountPerSecond, effect)
-            + EffectColors.Get(effect) + Scaled(total) + " " + effect.ToUpper() + "</color> OVER " + time.ToString() + "s\n";
+        float total = amountPerSecond * time * (1f / rate);
+        return Token(total, effect) + " / " + Num(time) + "s\n";
     }
 
     /// <summary>
@@ -110,17 +119,16 @@ internal static class EffectFormatter
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AdjustStatus)
         {
             Affliction_AdjustStatus effect = (Affliction_AdjustStatus)affliction;
-            string status = effect.statusType.ToString();
-            result += GainOrRemove(effect.statusAmount, status)
-                + EffectColors.Get(status) + Scaled(Mathf.Abs(effect.statusAmount)) + " " + status.ToUpper() + "</color>\n";
+            result += Token(effect.statusAmount, effect.statusType.ToString()) + "\n";
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.DrowsyOverTime)
         {
-            Affliction_AdjustDrowsyOverTime effect = (Affliction_AdjustDrowsyOverTime)affliction; // 1.6.a
-            result += (effect.statusPerSecond > 0 ? EffectColors.Negative + "GAIN</color> " : EffectColors.Positive + "REMOVE</color> ")
-                + EffectColors.Get("Drowsy")
-                + Num(Mathf.Round((Mathf.Abs(effect.statusPerSecond) * effect.totalTime * 100f) * 0.4f) / 0.4f)
-                + " DROWSY</color> OVER " + Num(effect.totalTime) + "s\n";
+            // Affliction_AdjustDrowsyOverTime.UpdateEffect applies statusPerSecond * deltaTime
+            // every frame, so the total is exactly statusPerSecond * totalTime (verified
+            // against 2.1.a). The original rounded to multiples of 2.5 for no reason, which
+            // could be off by up to 1.25.
+            Affliction_AdjustDrowsyOverTime effect = (Affliction_AdjustDrowsyOverTime)affliction;
+            result += EffectOverTime(effect.statusPerSecond, 1f, effect.totalTime, "Drowsy");
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ColdOverTime)
         {

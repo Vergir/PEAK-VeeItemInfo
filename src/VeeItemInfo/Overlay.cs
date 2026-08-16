@@ -4,19 +4,33 @@ using UnityEngine;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Owns the TextMeshPro object the description is drawn into.
+/// Owns the TextMeshPro object the description is drawn into, and keeps it sitting above
+/// whichever inventory slot holds the item being described.
 ///
-/// The overlay is parented straight to the HUD canvas and positioned against its
-/// bottom-right corner. An earlier version parented into ItemPromptLayout, but that is a
-/// layout group: it owned the position, so the only way to move the text was to stretch
-/// the box and let the group push it around. Anchoring directly makes the offsets mean
-/// what they say.
+/// Placement went through a few wrong turns worth recording, so they don't get retried:
+///
+///   - Parenting into ItemPromptLayout makes the game's layout group own our position,
+///     leaving box width as the only way to move the text sideways.
+///   - Setting LayoutElement.ignoreLayout to escape that stops the overlay rendering.
+///   - Offsets from a screen corner drift, because the HUD reflows with aspect ratio.
+///   - ItemPromptLayout is a full-height container, so its corners sit at the screen edges
+///     rather than around the prompts you can actually see.
+///
+/// What works: parent to Canvas_HUD, which neither positions nor clips us, and each frame
+/// measure the slot we want to sit above. Rendering is safe, tracking is exact.
 /// </summary>
 internal static class Overlay
 {
     private static GUIManager? guiManager;
     private static TextMeshProUGUI? textMesh;
     private static RectTransform? rect;
+    private static RectTransform? hudRect;
+    private static Item? trackedItem;
+    private static string lastText = "";
+    private static float cachedHeight;
+    private static float nextCreateAttempt;
+
+    private static readonly Vector3[] CornerBuffer = new Vector3[4];
 
     /// <summary>
     /// Builds the overlay if it doesn't exist yet, and reports whether it's usable.
@@ -26,11 +40,20 @@ internal static class Overlay
     /// </summary>
     internal static bool EnsureCreated()
     {
-        if (textMesh == null || guiManager == null)
+        if (textMesh != null && guiManager != null)
         {
-            Create();
+            return true;
         }
 
+        // Create() searches the scene by name, so a failed attempt must not repeat on the
+        // next frame - that turns a missing HUD into a per-frame scene scan.
+        if (Time.unscaledTime < nextCreateAttempt)
+        {
+            return false;
+        }
+
+        nextCreateAttempt = Time.unscaledTime + 1f;
+        Create();
         return textMesh != null;
     }
 
@@ -48,28 +71,31 @@ internal static class Overlay
             return;
         }
 
-        Transform? hud = guiManagerGameObj.transform.Find("Canvas_HUD");
-        if (hud == null)
+        hudRect = guiManagerGameObj.transform.Find("Canvas_HUD") as RectTransform;
+        if (hudRect == null)
         {
             Plugin.Log.LogWarning("Could not find Canvas_HUD - overlay not created.");
             return;
         }
 
         GameObject overlayGameObj = new GameObject("VeeItemInfo");
-        overlayGameObj.transform.SetParent(hud, worldPositionStays: false);
+        overlayGameObj.transform.SetParent(hudRect, worldPositionStays: false);
         textMesh = overlayGameObj.AddComponent<TextMeshProUGUI>();
         rect = overlayGameObj.GetComponent<RectTransform>();
 
         textMesh.font = guiManager.heroDayText.font;
         textMesh.text = "";
+        // Never intercept clicks - the HUD sits over the game world.
         textMesh.raycastTarget = false;
+        // Let long descriptions spill past the box rather than being clipped away.
+        textMesh.overflowMode = TextOverflowModes.Overflow;
 
         ApplyStyle();
     }
 
     /// <summary>
     /// Pushes the current config values onto the overlay. Safe to call at any time,
-    /// including before the overlay exists.
+    /// including before the overlay exists, so config changes can be applied live.
     /// </summary>
     internal static void ApplyStyle()
     {
@@ -78,29 +104,157 @@ internal static class Overlay
             return;
         }
 
-        // Pin all three to the bottom-right corner so the offsets are measured from
-        // there and stay put across resolutions and aspect ratios.
-        rect.anchorMin = new Vector2(1f, 0f);
-        rect.anchorMax = new Vector2(1f, 0f);
-        rect.pivot = new Vector2(1f, 0f);
-        // Height 0 lets TMP grow the box upward to fit however many lines there are.
-        rect.sizeDelta = new Vector2(PluginConfig.Width.Value, 0f);
-        rect.anchoredPosition = new Vector2(PluginConfig.OffsetX.Value, PluginConfig.OffsetY.Value);
+        // Anchor to the HUD's bottom-left so anchoredPosition is a plain coordinate in
+        // HUD space, whatever pivot the canvas itself happens to use. Our own pivot is the
+        // bottom-centre of the text, so it sits centred over a slot and grows upward.
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.zero;
+        rect.pivot = new Vector2(0.5f, 0f);
 
         textMesh.fontSize = PluginConfig.FontSize.Value;
         textMesh.lineSpacing = PluginConfig.LineSpacing.Value;
         textMesh.outlineWidth = PluginConfig.OutlineWidth.Value;
-        textMesh.alignment = PluginConfig.RightAlign.Value
-            ? TextAlignmentOptions.BottomRight
-            : TextAlignmentOptions.BottomLeft;
+        textMesh.alignment = TextAlignmentOptions.Bottom;
+
+        Remeasure();
+        UpdatePosition();
+    }
+
+    /// <summary>
+    /// Centres the overlay above the slot holding <paramref name="item"/>. Cheap enough to
+    /// run every frame, which keeps it correct as the selected slot changes and through
+    /// resolution and aspect ratio changes.
+    /// </summary>
+    internal static void UpdatePosition(Item? item = null)
+    {
+        if (item != null)
+        {
+            trackedItem = item;
+        }
+
+        if (rect == null || textMesh == null || hudRect == null)
+        {
+            return;
+        }
+
+        Rect hud = hudRect.rect;
+        Vector2 target = TryGetSlotTopCentre(out Vector2 slotTop)
+            ? slotTop
+            : new Vector2(hud.center.x, hud.yMin);
+
+        // Re-base onto the bottom-left anchor set in ApplyStyle, then apply the offsets.
+        target -= hud.min;
+        target += new Vector2(PluginConfig.OffsetX.Value, PluginConfig.OffsetY.Value);
+
+        // Keep the block on screen no matter what the measurement produced. Our pivot is
+        // the bottom-centre, so the text spans x +/- half its width, and y upward.
+        float halfWidth = Mathf.Min(rect.sizeDelta.x * 0.5f, hud.width * 0.5f);
+        target.x = Mathf.Clamp(target.x, halfWidth, hud.width - halfWidth);
+        target.y = Mathf.Clamp(target.y, 0f, Mathf.Max(0f, hud.height - cachedHeight));
+
+        rect.anchoredPosition = target;
+    }
+
+    /// <summary>
+    /// Finds the top-centre of the inventory slot showing the tracked item, in HUD-local
+    /// space. The temporary slot is checked first: when the inventory is full and you pick
+    /// something up, it appears there, to the left of the numbered slots.
+    /// </summary>
+    private static bool TryGetSlotTopCentre(out Vector2 topCentre)
+    {
+        topCentre = default;
+        if (guiManager == null || hudRect == null || trackedItem == null)
+        {
+            return false;
+        }
+
+        ItemInstanceData data = trackedItem.data;
+        if (data == null)
+        {
+            return false;
+        }
+
+        RectTransform? slot = MatchSlot(guiManager.temporaryItem, data);
+        if (slot == null && guiManager.items != null)
+        {
+            for (int i = 0; i < guiManager.items.Length && slot == null; i++)
+            {
+                slot = MatchSlot(guiManager.items[i], data);
+            }
+        }
+
+        if (slot == null)
+        {
+            return false;
+        }
+
+        // Corners are 0 = bottom-left, 1 = top-left, 2 = top-right, 3 = bottom-right.
+        slot.GetWorldCorners(CornerBuffer);
+        Vector2 topLeft = hudRect.InverseTransformPoint(CornerBuffer[1]);
+        Vector2 topRight = hudRect.InverseTransformPoint(CornerBuffer[2]);
+        topCentre = new Vector2((topLeft.x + topRight.x) * 0.5f, Mathf.Max(topLeft.y, topRight.y));
+        return true;
+    }
+
+    /// <summary>Returns the slot's rect if it is on screen and holding this exact item.</summary>
+    private static RectTransform? MatchSlot(InventoryItemUI? slot, ItemInstanceData data)
+    {
+        if (slot == null || !slot.gameObject.activeInHierarchy || slot.rectTransform == null)
+        {
+            return null;
+        }
+
+        return ReferenceEquals(slot._itemData, data) ? slot.rectTransform : null;
+    }
+
+    /// <summary>
+    /// Attaches the status icon sprite asset once the status bar exists. The bar is not
+    /// necessarily built when the HUD is, so this keeps trying until it succeeds.
+    /// </summary>
+    internal static void EnsureIcons()
+    {
+        if (textMesh == null || StatusIcons.Available)
+        {
+            return;
+        }
+
+        StatusIcons.EnsureBuilt();
+        if (StatusIcons.SpriteAsset != null)
+        {
+            textMesh.spriteAsset = StatusIcons.SpriteAsset;
+            // Icons change the line metrics, so the cached height is now stale.
+            lastText = "";
+            ItemInfoController.MarkDirty();
+        }
     }
 
     internal static void SetText(string text)
     {
-        if (textMesh != null)
+        if (textMesh == null || text == lastText)
         {
-            textMesh.text = text;
+            return;
         }
+
+        lastText = text;
+        textMesh.text = text;
+        Remeasure();
+    }
+
+    /// <summary>
+    /// Recomputes the box height from the current text. Rebuilding the mesh is expensive,
+    /// so this runs only when the text or the styling actually changes - never per frame.
+    /// The measured height is what makes Offset Y a true bottom edge.
+    /// </summary>
+    private static void Remeasure()
+    {
+        if (textMesh == null || rect == null)
+        {
+            return;
+        }
+
+        textMesh.ForceMeshUpdate();
+        cachedHeight = textMesh.preferredHeight;
+        rect.sizeDelta = new Vector2(PluginConfig.Width.Value, cachedHeight);
     }
 
     internal static void SetVisible(bool visible)
@@ -109,5 +263,42 @@ internal static class Overlay
         {
             textMesh.gameObject.SetActive(visible);
         }
+    }
+
+    /// <summary>
+    /// Tears the overlay out of the HUD and forgets everything. Needed for hot reloading:
+    /// the GameObject is parented to the game's own canvas, so it outlives our assembly
+    /// unless we remove it ourselves.
+    /// </summary>
+    internal static void Destroy()
+    {
+        if (textMesh != null)
+        {
+            UnityEngine.Object.Destroy(textMesh.gameObject);
+        }
+
+        textMesh = null;
+        rect = null;
+        hudRect = null;
+        guiManager = null;
+        trackedItem = null;
+        lastText = "";
+        cachedHeight = 0f;
+        nextCreateAttempt = 0f;
+    }
+
+    /// <summary>Dumps the numbers behind the current placement, for diagnosing position bugs.</summary>
+    internal static void LogDiagnostics()
+    {
+        if (rect == null || hudRect == null || textMesh == null)
+        {
+            Plugin.Log.LogInfo("[pos] overlay not created yet");
+            return;
+        }
+
+        string slot = TryGetSlotTopCentre(out Vector2 top) ? top.ToString() : "<no matching slot>";
+        Plugin.Log.LogInfo($"[pos] hud={hudRect.rect} slotTopCentre={slot} "
+            + $"anchoredPos={rect.anchoredPosition} textHeight={textMesh.preferredHeight:F0} "
+            + $"visible={textMesh.gameObject.activeSelf} chars={textMesh.text.Length}");
     }
 }

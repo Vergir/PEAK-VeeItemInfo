@@ -2,6 +2,7 @@ using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 using System;
+using System.Collections.Generic;
 
 namespace VeeItemInfo;
 
@@ -19,6 +20,8 @@ public partial class Plugin : BaseUnityPlugin
         typeof(ActionReduceUsesPatch),
     };
 
+    private readonly List<Harmony> patches = new();
+
     private void Awake()
     {
         Log = Logger;
@@ -28,17 +31,36 @@ public partial class Plugin : BaseUnityPlugin
     }
 
     /// <summary>
+    /// Undoes everything Awake did. Required for hot reloading (AutoReload and similar):
+    /// without it a reload leaves the old patches applied and the old overlay in the HUD,
+    /// so each reload stacks another copy on top of the last.
+    /// </summary>
+    private void OnDestroy()
+    {
+        foreach (Harmony harmony in patches)
+        {
+            harmony.UnpatchSelf();
+        }
+
+        patches.Clear();
+        Overlay.Destroy();
+        StatusIcons.Reset();
+        Log.LogInfo($"Plugin {Name} is unloaded!");
+    }
+
+    /// <summary>
     /// Harmony resolves patch targets by name at runtime, so a method renamed by a game
     /// update fails here rather than at build time. Patching one type at a time keeps a
     /// single dead target from taking the whole plugin down with it.
     /// </summary>
-    private static void ApplyPatches()
+    private void ApplyPatches()
     {
         foreach (Type patchType in PatchTypes)
         {
             try
             {
-                Harmony.CreateAndPatchAll(patchType);
+                // Keep the instance so OnDestroy can unpatch it again on reload.
+                patches.Add(Harmony.CreateAndPatchAll(patchType, $"{Id}.{patchType.Name}"));
             }
             catch (Exception e)
             {

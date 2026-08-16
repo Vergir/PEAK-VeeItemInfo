@@ -11,43 +11,56 @@ internal static class PluginConfig
     internal static ConfigEntry<float> FontSize = null!;
     internal static ConfigEntry<float> OutlineWidth = null!;
     internal static ConfigEntry<float> LineSpacing = null!;
-    internal static ConfigEntry<bool> RightAlign = null!;
+    internal static ConfigEntry<float> IconScale = null!;
 
     internal static ConfigEntry<float> Width = null!;
     internal static ConfigEntry<float> OffsetX = null!;
     internal static ConfigEntry<float> OffsetY = null!;
 
     internal static ConfigEntry<float> ForceUpdateTime = null!;
+    internal static ConfigEntry<bool> DebugLogging = null!;
 
     internal static void Bind(ConfigFile config)
     {
-        FontSize = config.Bind(Appearance, "Font Size", 28f,
+        // Every numeric setting declares a range on purpose. Without one, config editors
+        // such as ConfigurationManager fall back to a text box that only commits on Enter,
+        // which reads as "changing the value does nothing". A range gets you a live slider.
+        FontSize = Bind(config, Appearance, "Font Size", 20f, 8f, 72f,
             "Font size for the description text.");
-        OutlineWidth = config.Bind(Appearance, "Outline Width", 0f,
+        OutlineWidth = Bind(config, Appearance, "Outline Width", 0f, 0f, 1f,
             "Thickness of the outline around the text. 0 disables it.");
-        LineSpacing = config.Bind(Appearance, "Line Spacing", -35f,
+        LineSpacing = Bind(config, Appearance, "Line Spacing", -35f, -100f, 50f,
             "Spacing between lines. Negative values tighten it up.");
-        RightAlign = config.Bind(Appearance, "Right Align", true,
-            "Align text to the right edge of its box. Turn off for left-aligned text.");
+        IconScale = Bind(config, Appearance, "Icon Scale", 0.7f, 0.2f, 2f,
+            "Size of the status icons relative to the text. 1 makes an icon a full line tall.");
 
-        Width = config.Bind(Position, "Width", 550f,
+        // Offsets are measured from the top-centre of whichever inventory slot holds the
+        // item being described, so the overlay follows the selected slot and holds at any
+        // resolution.
+        Width = Bind(config, Position, "Width", 200f, 50f, 2000f,
             "Width of the text box. Text wraps at this width.");
-        OffsetX = config.Bind(Position, "Offset X", -40f,
-            "Horizontal offset from the bottom-right corner of the HUD. Negative moves left.");
-        OffsetY = config.Bind(Position, "Offset Y", 210f,
-            "Vertical offset from the bottom-right corner of the HUD. Positive moves up.");
+        OffsetX = Bind(config, Position, "Offset X", 0f, -1500f, 1500f,
+            "Horizontal offset from the active slot. Negative moves left.");
+        OffsetY = Bind(config, Position, "Offset Y", 45f, -1500f, 1500f,
+            "Height of the text's bottom edge above the active slot. Lines grow upward from here.");
 
-        ForceUpdateTime = config.Bind(Behaviour, "Force Update Time", 1f,
+        ForceUpdateTime = Bind(config, Behaviour, "Force Update Time", 1f, 0.1f, 10f,
             "Seconds between forced refreshes for values that no game event reports.");
+        DebugLogging = config.Bind(Behaviour, "Debug Logging", false,
+            "Log overlay placement numbers to the BepInEx console. For diagnosing position problems.");
 
-        // Re-apply on change so the overlay can be positioned and styled while the game
+        // Re-apply on change so the overlay can be styled and positioned while the game
         // is running, instead of a rebuild-and-relaunch for every nudge.
         config.SettingChanged += (_, _) =>
         {
+            StatusIcons.ApplyScale();
             Overlay.ApplyStyle();
             ItemInfoController.MarkDirty();
         };
     }
+
+    private static ConfigEntry<float> Bind(ConfigFile config, string section, string key, float value, float min, float max, string description) =>
+        config.Bind(section, key, value, new ConfigDescription(description, new AcceptableValueRange<float>(min, max)));
 
     /// <summary>
     /// Some values (scorpion sting damage, rope remaining) change continuously with no

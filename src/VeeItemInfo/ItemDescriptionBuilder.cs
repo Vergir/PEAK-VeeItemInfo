@@ -31,7 +31,9 @@ internal static class ItemDescriptionBuilder
         float weight = Ascents.itemWeightModifier > 0
             ? (item.carryWeight + Ascents.itemWeightModifier) * 2.5f
             : item.carryWeight * 2.5f;
-        suffixWeight = EffectColors.Get("Weight") + EffectFormatter.Num(weight) + " WEIGHT</color>";
+        // Weight is a property of the item, not a change to your status, so it carries no
+        // sign - just the number and the icon.
+        suffixWeight = EffectFormatter.Plain(weight, "Weight");
 
         // Layer 1: items identified only by name.
         if (itemGameObj.name.Equals("Bugle(Clone)"))
@@ -85,7 +87,9 @@ internal static class ItemDescriptionBuilder
             else if (itemComponents[i].GetType() == typeof(Action_AddOrRemoveThorns))
             {
                 Action_AddOrRemoveThorns effect = (Action_AddOrRemoveThorns)itemComponents[i];
-                prefixStatus += EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns"); // TODO: Search for thorns amount per applied thorn
+                // CharacterAfflictions.UpdateWeight sets Thorns to 0.025 per thorn increment
+                // (verified against 2.1.a). The original 0.05 here was a guess, and doubled it.
+                prefixStatus += EffectFormatter.Effect(effect.thornCount * 0.025f, "Thorns");
             }
             else if (itemComponents[i].GetType() == typeof(Action_ModifyStatus))
             {
@@ -386,23 +390,17 @@ internal static class ItemDescriptionBuilder
                 // Hiding the poison info when dead was tried and reverted: mob state does not
                 // update immediately on equip, which produced a visual bug.
                 Scorpion effect = (Scorpion)itemComponents[i];
-                string sting = "IF ALIVE, " + EffectColors.Get("Poison") + "STINGS</color> YOU\n" + EffectColors.Get("Curse")
-                    + "DIES</color> WHEN " + EffectColors.Get("Heat") + "COOKED</color>\n\n" + EffectColors.Neutral + "NEXT STING WILL DEAL:</color>\n";
 
-                if (PluginConfig.LiveValuesTrustworthy)
-                {
-                    // v.1.23.a BASED ON Scorpion.InflictAttack - there is no variable for the
-                    // poison amount, it is computed at sting time from the victim's health.
-                    float effectPoison = Mathf.Max(0.5f, 1f - item.holderCharacter.refs.afflictions.statusSum + 0.05f) * 100f;
-                    body += sting + EffectColors.Get("Poison") + EffectFormatter.Num(effectPoison) + " POISON</color> OVER "
-                        + EffectFormatter.Num(effect.totalPoisonTime) + "s\n" + EffectColors.Neutral + "(MORE DAMAGE IF HEALTHY)</color>\n";
-                }
-                else
-                {
-                    body += sting + "AT LEAST " + EffectColors.Get("Poison") + "50 POISON</color> OVER "
-                        + EffectFormatter.Num(effect.totalPoisonTime) + "s\nAT MOST " + EffectColors.Get("Poison") + "105 POISON</color> OVER "
-                        + EffectFormatter.Num(effect.totalPoisonTime) + "s\n" + EffectColors.Neutral + "(MORE DAMAGE IF HEALTHY)</color>\n";
-                }
+                // Scorpion.InflictAttack (verified against 2.1.a) does two things: an instant
+                // AddStatus(Poison, 0.025), then a poison-over-time affliction totalling
+                // max(0.5, (1 - statusSum) + 0.05). statusSum runs 0..1, so the over-time part
+                // spans 50 at full status to 105 at none - more damage the healthier you are.
+                //
+                // The range is shown rather than the live figure: recomputing it needs the
+                // holder's current status every frame, and a number that drifts while you look
+                // at it is less useful than knowing the bounds.
+                body += EffectFormatter.Colored("2.5", "Poison") + " + "
+                    + EffectFormatter.Colored("50-105", "Poison") + " / " + EffectFormatter.Num(effect.totalPoisonTime) + "s\n";
             }
             else if (itemComponents[i].GetType() == typeof(Action_Spawn))
             {
@@ -429,6 +427,24 @@ internal static class ItemDescriptionBuilder
             {
                 suffixCooked += DescribeCooking((ItemCooking)itemComponents[i]);
             }
+            // Amulets are matched with 'is' rather than an exact type check: they all derive
+            // from AmuletBase and each applies petrify through a different path.
+            else if (itemComponents[i] is Peak.Action_SuperJumpAmulet superJump)
+            {
+                // AddStatus takes a 0-1 fraction, same scale as every other status.
+                prefixStatus += EffectFormatter.Effect(superJump.petrifyPerUse, "Petrify");
+            }
+            else if (itemComponents[i] is Peak.InfiniteStamAmulet stamAmulet)
+            {
+                // AddPetrify takes whole points on the 0-100 scale, not a fraction, so this
+                // value is already in display units.
+                body += EffectFormatter.Colored("+" + EffectFormatter.Num(stamAmulet.petrifyPerSecond), "Petrify")
+                    + " / 1s\n";
+            }
+            else if (itemComponents[i] is Peak.HealingAmulet)
+            {
+                body += EffectFormatter.Colored("+1", "Petrify") + "\n";
+            }
         }
 
         if (prefixStatus.Length > 0 && isConsumable)
@@ -439,7 +455,18 @@ internal static class ItemDescriptionBuilder
         {
             body += "\n" + suffixAfflictions;
         }
-        body += "\n" + suffixWeight + suffixUses + suffixCooked;
+
+        // Uses and cooking state first, then weight strictly last so the final line is
+        // always the same thing in the same place.
+        if (suffixUses.Length > 0)
+        {
+            body += "\n" + suffixUses.Trim();
+        }
+        if (suffixCooked.Length > 0)
+        {
+            body += "\n" + suffixCooked.Trim();
+        }
+        body += "\n" + suffixWeight;
 
         return body.Replace("\n\n\n", "\n\n");
     }
