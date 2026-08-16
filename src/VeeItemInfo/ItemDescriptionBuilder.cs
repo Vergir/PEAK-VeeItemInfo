@@ -220,6 +220,13 @@ internal static class ItemDescriptionBuilder
             // from AmuletBase and each applies petrify through a different path.
             else if (itemComponents[i] is Peak.Action_SuperJumpAmulet superJump)
             {
+                // Action_SuperJumpAmulet derives from Action_ApplyAffliction and its
+                // RunAction calls base.RunAction() before charging petrify, so it carries a
+                // real affliction as well as a cost. The Action_ApplyAffliction branch above
+                // matches on exact type and so never sees a subclass - this is the only
+                // place that affliction is read, and without it the amulets showed their
+                // price and nothing they bought.
+                layout.Add(Block.Status, EffectFormatter.Affliction(superJump.affliction));
                 // AddStatus takes a 0-1 fraction, same scale as every other status.
                 layout.Add(Block.Status, EffectFormatter.Effect(superJump.petrifyPerUse, "Petrify"));
             }
