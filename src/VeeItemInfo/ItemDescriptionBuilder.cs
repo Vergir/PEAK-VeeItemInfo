@@ -435,17 +435,10 @@ internal static class ItemDescriptionBuilder
                 // AddStatus takes a 0-1 fraction, same scale as every other status.
                 prefixStatus += EffectFormatter.Effect(superJump.petrifyPerUse, "Petrify");
             }
-            else if (itemComponents[i] is Peak.InfiniteStamAmulet stamAmulet)
-            {
-                // AddPetrify takes whole points on the 0-100 scale, not a fraction, so this
-                // value is already in display units.
-                body += EffectFormatter.Colored("+" + EffectFormatter.Num(stamAmulet.petrifyPerSecond), "Petrify")
-                    + " / 1s\n";
-            }
-            else if (itemComponents[i] is Peak.HealingAmulet)
-            {
-                body += EffectFormatter.Colored("+1", "Petrify") + "\n";
-            }
+            // InfiniteStamAmulet and HealingAmulet are deliberately not handled yet. Their
+            // petrify costs live in nested ItemPocketBehavior instances that tick while the
+            // amulet sits in a pocket, which is a different thing from the cost of using it
+            // - reporting the tick as if it were the use cost would be worse than silence.
         }
 
         if (prefixStatus.Length > 0 && isConsumable)
