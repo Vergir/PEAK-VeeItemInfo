@@ -5,14 +5,16 @@ namespace VeeItemInfo;
 /// <summary>
 /// Builds the overlay text for an item by scanning every component on it.
 ///
-/// Three dispatch layers feed the result:
-///   1. GameObject name, for flavour text on items with no distinguishing component.
-///   2. Component type, which is where nearly all the real information comes from.
-///   3. Affliction type, handled over in <see cref="EffectFormatter.Affliction"/>.
+/// The goal is a display that needs no translation: numbers, signs and the game's own
+/// status icons instead of sentences. English prose that carried no information has been
+/// removed. What remains is either wrapped around a real number (rope lengths, blast
+/// damage, charge thresholds) or labels who an effect applies to, and both are still
+/// waiting to be reworked into symbols.
 ///
 /// Note the component chain matches with GetType() == typeof(T), which is exact - a
-/// subclass will not match. That is deliberate for now, but it is also the most likely
-/// reason for an item silently losing its description after a game update.
+/// subclass will not match. That is the most likely reason for an item silently losing its
+/// description after a game update. Amulets are the exception and use 'is', because they
+/// all derive from AmuletBase.
 /// </summary>
 internal static class ItemDescriptionBuilder
 {
@@ -23,9 +25,7 @@ internal static class ItemDescriptionBuilder
         bool isConsumable = false;
         string body = "";
         string prefixStatus = "";
-        string suffixWeight;
         string suffixUses = "";
-        string suffixCooked = "";
         string suffixAfflictions = "";
 
         float weight = Ascents.itemWeightModifier > 0
@@ -33,27 +33,8 @@ internal static class ItemDescriptionBuilder
             : item.carryWeight * 2.5f;
         // Weight is a property of the item, not a change to your status, so it carries no
         // sign - just the number and the icon.
-        suffixWeight = EffectFormatter.Plain(weight, "Weight");
+        string suffixWeight = EffectFormatter.Plain(weight, "Weight");
 
-        // Layer 1: items identified only by name.
-        if (itemGameObj.name.Equals("Bugle(Clone)"))
-        {
-            body += "MAKE SOME NOISE\n";
-        }
-        else if (itemGameObj.name.Equals("Pirate Compass(Clone)"))
-        {
-            body += EffectColors.Get("Injury") + "POINTS</color> TO THE NEAREST LUGGAGE\n";
-        }
-        else if (itemGameObj.name.Equals("Compass(Clone)"))
-        {
-            body += EffectColors.Get("Injury") + "POINTS</color> NORTH TO THE PEAK\n";
-        }
-        else if (itemGameObj.name.Equals("Shell Big(Clone)"))
-        {
-            body += "TRY " + EffectColors.Get("Hunger") + "THROWING</color> AT A COCONUT\n";
-        }
-
-        // Layer 2: everything the item's components can tell us.
         for (int i = 0; i < itemComponents.Length; i++)
         {
             if (itemComponents[i].GetType() == typeof(ItemUseFeedback))
@@ -133,14 +114,6 @@ internal static class ItemDescriptionBuilder
                 }
                 body = body.Replace(", <#E13542>CRAB</color>", "") + "\n";
             }
-            else if (itemComponents[i].GetType() == typeof(Action_ConsumeAndSpawn))
-            {
-                Action_ConsumeAndSpawn effect = (Action_ConsumeAndSpawn)itemComponents[i];
-                if (effect.itemToSpawn.ToString().Contains("Peel"))
-                {
-                    body += EffectColors.Neutral + "GAIN A PEEL WHEN EATEN</color>\n";
-                }
-            }
             else if (itemComponents[i].GetType() == typeof(Action_ReduceUses))
             {
                 OptionableIntItemData uses = (OptionableIntItemData)item.data.data[DataEntryKey.ItemUses];
@@ -152,11 +125,8 @@ internal static class ItemDescriptionBuilder
             else if (itemComponents[i].GetType() == typeof(Lantern))
             {
                 Lantern lantern = (Lantern)itemComponents[i];
-                if (itemGameObj.name.Equals("Torch(Clone)"))
-                {
-                    body += "CAN BE LIT\n";
-                }
-                else
+                // A torch burns for itself; everything else warms whoever is nearby.
+                if (!itemGameObj.name.Equals("Torch(Clone)"))
                 {
                     suffixAfflictions += EffectColors.Neutral + "WHEN LIT, NEARBY PLAYERS RECEIVE:</color>\n";
                 }
@@ -194,26 +164,6 @@ internal static class ItemDescriptionBuilder
                 }
                 suffixAfflictions += "\n";
             }
-            else if (itemComponents[i].GetType() == typeof(MagicBugle))
-            {
-                body += "WHILE PLAYING THE BUGLE,";
-            }
-            else if (itemComponents[i].GetType() == typeof(ClimbingSpikeComponent))
-            {
-                body += "PLACE A PITON YOU CAN GRAB\nTO " + EffectColors.Get("Extra Stamina") + "REGENERATE STAMINA</color>\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Flare))
-            {
-                body += "CAN BE LIT\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Backpack))
-            {
-                body += "DROP TO PLACE ITEMS INSIDE\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(BananaPeel))
-            {
-                body += EffectColors.Get("Hunger") + "SLIP</color> WHEN STEPPED ON\n";
-            }
             else if (itemComponents[i].GetType() == typeof(Constructable))
             {
                 Constructable effect = (Constructable)itemComponents[i];
@@ -221,10 +171,6 @@ internal static class ItemDescriptionBuilder
                 {
                     body += "PLACE A " + EffectColors.Get("Injury") + "COOKING</color> STOVE FOR "
                         + effect.constructedPrefab.GetComponent<Campfire>().burnsFor.ToString() + "s\n";
-                }
-                else
-                {
-                    body += "CAN BE PLACED\n";
                 }
             }
             else if (itemComponents[i].GetType() == typeof(RopeSpool))
@@ -246,18 +192,6 @@ internal static class ItemDescriptionBuilder
                 body += "SHOOT A ROPE ANCHOR WHICH PLACES\nA ROPE THAT ";
                 body += effect.ropeAnchorWithRopePref.name.Equals("RopeAnchorForRopeShooterAnti") ? "FLOATS UP " : "DROPS DOWN ";
                 body += EffectFormatter.Num(effect.maxLength / 4f) + "m\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Antigrav))
-            {
-                Antigrav effect = (Antigrav)itemComponents[i];
-                if (effect.intensity != 0f)
-                {
-                    suffixAfflictions += EffectColors.Get("Injury") + "WARNING:</color> " + EffectColors.Neutral + "FLIES AWAY IF DROPPED</color>\n";
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Balloon))
-            {
-                suffixAfflictions += "CAN ATTACH TO CHARACTER\n";
             }
             else if (itemComponents[i].GetType() == typeof(VineShooter))
             {
@@ -288,35 +222,10 @@ internal static class ItemDescriptionBuilder
                         body += EffectFormatter.EffectOverTime(Mathf.Round(effect2AOEs[1].statusAmount * (1f / effect2TimeEvent.rate) * 40f) / 40f, 1f, effect2RemoveAfterSeconds.seconds + 1f, effect2AOEs[1].statusType.ToString());
                     }
                 }
-                else if (effect.instantiateOnBreak.name.Equals("ShelfShroomSpawn"))
-                {
-                    body += EffectColors.Get("Hunger") + "THROW</color> TO DEPLOY A PLATFORM\n";
-                }
-                else if (effect.instantiateOnBreak.name.Equals("BounceShroomSpawn"))
-                {
-                    body += EffectColors.Get("Hunger") + "THROW</color> TO DEPLOY A BOUNCE PAD\n";
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(ScoutEffigy))
-            {
-                body += EffectColors.Get("Extra Stamina") + "REVIVE</color> A DEAD PLAYER\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Die))
-            {
-                body += "YOU " + EffectColors.Get("Curse") + "DIE</color> WHEN USED\n";
             }
             else if (itemComponents[i].GetType() == typeof(Action_SpawnGuidebookPage))
             {
                 isConsumable = true;
-                body += "CAN BE OPENED\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Guidebook))
-            {
-                body += "CAN BE READ\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_CallScoutmaster))
-            {
-                body += EffectColors.Get("Injury") + "BREAKS RULE 0 WHEN USED</color>\n";
             }
             else if (itemComponents[i].GetType() == typeof(Action_MoraleBoost))
             {
@@ -332,52 +241,16 @@ internal static class ItemDescriptionBuilder
                         + EffectColors.Get("Extra Stamina") + EffectFormatter.Scaled(effect.baselineStaminaBoost) + " EXTRA STAMINA</color>\n";
                 }
             }
-            else if (itemComponents[i].GetType() == typeof(Breakable))
-            {
-                body += EffectColors.Get("Hunger") + "THROW</color> TO CRACK OPEN\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Bonkable))
-            {
-                body += EffectColors.Get("Hunger") + "THROW</color> AT HEAD TO " + EffectColors.Get("Injury") + "BONK</color>\n";
-            }
             else if (itemComponents[i].GetType() == typeof(MagicBean))
             {
                 MagicBean effect = (MagicBean)itemComponents[i];
                 body += EffectColors.Get("Hunger") + "THROW</color> TO PLANT A VINE THAT GROWS\nPERPENDICULAR TO TERRAIN UP TO\n"
                     + EffectFormatter.Num(effect.plantPrefab.maxLength / 2f) + "m OR UNTIL IT HITS SOMETHING\n";
             }
-            else if (itemComponents[i].GetType() == typeof(BingBong))
-            {
-                body += "MASCOT OF BINGBONG AIRWAYS\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Passport))
-            {
-                body += "OPEN TO CUSTOMIZE CHARACTER\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Actions_Binoculars))
-            {
-                body += "USE TO LOOK FURTHER\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_WarpToRandomPlayer))
-            {
-                body += "WARP TO RANDOM PLAYER\n";
-            }
             else if (itemComponents[i].GetType() == typeof(Action_WarpToBiome))
             {
                 Action_WarpToBiome effect = (Action_WarpToBiome)itemComponents[i];
                 body += "WARP TO " + effect.segmentToWarpTo.ToString().ToUpper() + "\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Parasol))
-            {
-                body += "OPEN TO SLOW YOUR DESCENT\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Frisbee))
-            {
-                body += EffectColors.Get("Hunger") + "THROW</color> IT\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_ConstructableScoutCannonScroll))
-            {
-                body += "\n" + EffectColors.Neutral + "WHEN PLACED, LIGHT FUSE TO:</color>\nLAUNCH SCOUTS IN BARREL\n";
             }
             else if (itemComponents[i].GetType() == typeof(Dynamite))
             {
@@ -396,10 +269,6 @@ internal static class ItemDescriptionBuilder
                 // AddStatus(Poison, 0.025), then a poison-over-time affliction totalling
                 // max(0.5, (1 - statusSum) + 0.05). statusSum runs 0..1, so the over-time part
                 // spans 50 at full status to 105 at none - more damage the healthier you are.
-                //
-                // The range is shown rather than the live figure: recomputing it needs the
-                // holder's current status every frame, and a number that drifts while you look
-                // at it is less useful than knowing the bounds.
                 body += EffectFormatter.Colored("2.5", "Poison") + " + "
                     + EffectFormatter.Colored("50-105", "Poison") + " / " + EffectFormatter.Num(effect.totalPoisonTime) + "s\n";
             }
@@ -419,14 +288,6 @@ internal static class ItemDescriptionBuilder
                 CactusBall effect = (CactusBall)itemComponents[i];
                 body += EffectColors.Get("Thorns") + "STICKS</color> TO YOUR BODY\n\nCAN " + EffectColors.Get("Hunger")
                     + "THROW</color> BY USING\nAT LEAST " + EffectFormatter.Scaled(effect.throwChargeRequirement) + "% POWER\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(BingBongShieldWhileHolding))
-            {
-                body += EffectColors.Neutral + "WHILE EQUIPPED, GRANTS:</color>\n" + EffectColors.Get("Shield") + "SHIELD</color> (INVINCIBILITY)\n";
-            }
-            else if (itemComponents[i].GetType() == typeof(ItemCooking))
-            {
-                suffixCooked += DescribeCooking((ItemCooking)itemComponents[i]);
             }
             // Amulets are matched with 'is' rather than an exact type check: they all derive
             // from AmuletBase and each applies petrify through a different path.
@@ -449,47 +310,13 @@ internal static class ItemDescriptionBuilder
         {
             body += "\n" + suffixAfflictions;
         }
-
-        // Uses and cooking state first, then weight strictly last so the final line is
-        // always the same thing in the same place.
         if (suffixUses.Length > 0)
         {
             body += "\n" + suffixUses.Trim();
         }
-        if (suffixCooked.Length > 0)
-        {
-            body += "\n" + suffixCooked.Trim();
-        }
         body += "\n" + suffixWeight;
 
         return body.Replace("\n\n\n", "\n\n");
-    }
-
-    /// <summary>
-    /// Cooking state, colour-coded by how close the item is to being ruined.
-    /// </summary>
-    private static string DescribeCooking(ItemCooking itemCooking)
-    {
-        if (itemCooking.wreckWhenCooked)
-        {
-            return itemCooking.timesCookedLocal >= 1
-                ? "\n" + EffectColors.Get("Curse") + "BROKEN FROM COOKING</color>"
-                : "\n" + EffectColors.Get("Curse") + "BREAKS IF COOKED</color>";
-        }
-
-        if (itemCooking.timesCookedLocal >= ItemCooking.COOKING_MAX)
-        {
-            return "   " + EffectColors.Get("Curse") + itemCooking.timesCookedLocal.ToString() + "x COOKED\nCANNOT BE COOKED</color>";
-        }
-
-        return itemCooking.timesCookedLocal switch
-        {
-            0 => "\n" + EffectColors.Get("Extra Stamina") + "CAN BE COOKED</color>",
-            1 => "   " + EffectColors.Get("Extra Stamina") + "1x COOKED</color>\n" + EffectColors.Get("Hunger") + "CAN BE COOKED</color>",
-            2 => "   " + EffectColors.Get("Hunger") + "2x COOKED</color>\n" + EffectColors.Get("Injury") + "CAN BE COOKED</color>",
-            3 => "   " + EffectColors.Get("Injury") + "3x COOKED</color>\n" + EffectColors.Get("Poison") + "CAN BE COOKED</color>",
-            _ => "   " + EffectColors.Get("Poison") + itemCooking.timesCookedLocal.ToString() + "x COOKED\nCAN BE COOKED</color>",
-        };
     }
 
     /// <summary>Drops a single trailing newline so a "," can be appended to join list entries.</summary>
