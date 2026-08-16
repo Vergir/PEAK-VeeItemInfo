@@ -11,8 +11,6 @@ internal static class PluginConfig
     internal static ConfigEntry<float> FontSize = null!;
     internal static ConfigEntry<float> OutlineWidth = null!;
     internal static ConfigEntry<float> LineSpacing = null!;
-    internal static ConfigEntry<float> IconScale = null!;
-    internal static ConfigEntry<float> IconOffset = null!;
 
     internal static ConfigEntry<float> Width = null!;
     internal static ConfigEntry<float> OffsetX = null!;
@@ -32,13 +30,8 @@ internal static class PluginConfig
             "Thickness of the outline around the text. 0 disables it.");
         LineSpacing = Bind(config, Appearance, "Line Spacing", -35f, -100f, 50f,
             "Spacing between lines. Negative values tighten it up.");
-        // Both icon knobs are for dialling in the ratio against the text. Once the right
-        // values are settled they should collapse into Font Size, which already scales the
-        // icons with it - these are relative measurements, not absolute sizes.
-        IconScale = Bind(config, Appearance, "Icon Scale", 0.85f, 0.2f, 2f,
-            "Size of the status icons relative to the text. 1 makes an icon a full line tall.");
-        IconOffset = Bind(config, Appearance, "Icon Offset", 0f, -0.5f, 0.5f,
-            "Nudges the icons up or down against the text. Positive moves up.");
+        // Icon size and alignment are constants in StatusIcons, expressed as fractions of
+        // the font size. That makes Font Size the single knob for how big everything is.
 
         // Offsets are measured from the top-centre of whichever inventory slot holds the
         // item being described, so the overlay follows the selected slot and holds at any
@@ -59,7 +52,6 @@ internal static class PluginConfig
         // is running, instead of a rebuild-and-relaunch for every nudge.
         config.SettingChanged += (_, _) =>
         {
-            StatusIcons.ApplyScale();
             Overlay.ApplyStyle();
             ItemInfoController.MarkDirty();
         };

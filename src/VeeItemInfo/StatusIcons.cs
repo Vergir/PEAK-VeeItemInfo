@@ -40,13 +40,35 @@ internal static class StatusIcons
 
     /// <summary>
     /// Roughly the middle of an upper-case glyph, in em above the baseline. PEAK's HUD font
-    /// is all caps, so this is what an icon should line up with.
+    /// is all caps, so this is what an icon should line up with. Dialled in against the
+    /// game rather than derived - the font's own metrics put it slightly high.
     /// </summary>
-    private const float CapCentre = 0.36f;
+    private const float CapCentre = 0.31f;
+
+    /// <summary>
+    /// Icon height as a fraction of the font size. Being a ratio rather than an absolute
+    /// size is what lets Font Size stay the only knob: icons scale with the text and keep
+    /// their alignment for free.
+    /// </summary>
+    private const float IconScale = 0.85f;
     private static int attempts;
     private static float nextAttempt;
 
     internal static bool Available => Tags.Count > 0;
+
+    /// <summary>
+    /// True when the icons are built and their Unity objects are still alive. A scene load
+    /// can destroy them out from under us while the mapping still looks populated.
+    /// </summary>
+    internal static bool IsValid => Available && spriteAsset != null && atlas != null;
+
+    /// <summary>Throws away a dead build so the next EnsureBuilt starts fresh.</summary>
+    internal static void Invalidate()
+    {
+        Reset();
+        attempts = 0;
+        nextAttempt = 0f;
+    }
 
     internal static TMP_SpriteAsset? SpriteAsset => spriteAsset;
 
@@ -213,7 +235,14 @@ internal static class StatusIcons
             asset.UpdateLookupTables();
             spriteAsset = asset;
 
-            ApplyScale();
+            ApplyMetrics();
+
+            // Runtime-generated assets belong to no scene, so a scene load would otherwise
+            // unload them and leave the text pointing at freed sprites - which TMP draws as
+            // its missing-sprite placeholder.
+            atlas.hideFlags = HideFlags.HideAndDontSave;
+            asset.hideFlags = HideFlags.HideAndDontSave;
+            asset.material.hideFlags = HideFlags.HideAndDontSave;
 
             // Our own aliases for statuses the game names differently, and for the one
             // key that has a space in it - a space would break the rich text tag.
@@ -240,22 +269,18 @@ internal static class StatusIcons
     /// this takes effect on the next rebuild without repacking the atlas - cheap enough to
     /// drive from a config slider.
     /// </summary>
-    internal static void ApplyScale()
+    private static void ApplyMetrics()
     {
-        float scale = PluginConfig.IconScale.Value;
-
         for (int i = 0; i < Glyphs.Count; i++)
         {
-            float height = scale;
-            float width = Aspects[i] * scale;
+            float height = IconScale;
+            float width = Aspects[i] * IconScale;
 
             // Vertical placement is the bearing: how far the glyph's top sits above the
-            // baseline. Centring the icon on the middle of the cap height keeps it level
-            // with the digits at any size, which sizing alone does not - scaling a fixed
-            // bearing just drags the icon down toward the baseline as it shrinks.
-            float bearingY = CapCentre + (height * 0.5f) + PluginConfig.IconOffset.Value;
-
-            Glyphs[i].metrics = new GlyphMetrics(width, height, 0f, bearingY, width);
+            // baseline. Deriving it from the icon's own height keeps the icon centred on
+            // the cap height at any size, which sizing alone does not - a fixed bearing
+            // gets dragged toward the baseline as the glyph shrinks.
+            Glyphs[i].metrics = new GlyphMetrics(width, height, 0f, CapCentre + (height * 0.5f), width);
         }
     }
 

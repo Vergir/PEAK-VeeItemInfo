@@ -213,13 +213,24 @@ internal static class Overlay
     /// </summary>
     internal static void EnsureIcons()
     {
-        if (textMesh == null || StatusIcons.Available)
+        if (textMesh == null)
         {
             return;
         }
 
+        // Dying or starting a new run rebuilds the HUD, which gives us a fresh text mesh
+        // and can destroy the generated atlas. Both cases have to be caught: the mapping
+        // can still look populated while its Unity objects are gone, and a new text mesh
+        // has no sprite asset assigned even when the old one is perfectly alive. Either
+        // way TMP falls back to its own sprite set and every icon renders as a "?".
+        if (StatusIcons.Available && !StatusIcons.IsValid)
+        {
+            StatusIcons.Invalidate();
+        }
+
         StatusIcons.EnsureBuilt();
-        if (StatusIcons.SpriteAsset != null)
+
+        if (StatusIcons.SpriteAsset != null && textMesh.spriteAsset != StatusIcons.SpriteAsset)
         {
             textMesh.spriteAsset = StatusIcons.SpriteAsset;
             // Icons change the line metrics, so the cached height is now stale.
