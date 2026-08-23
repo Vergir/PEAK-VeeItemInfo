@@ -1,3 +1,12 @@
+Note on bundled artwork
+-----------------------
+
+The MIT terms below cover the SOURCE CODE of this project only.
+
+Files under assets/ are artwork from the game PEAK, copyright Aggro Crab and Landfall
+Games, and are NOT licensed under the MIT terms below. See assets/NOTICE.md for what
+is there, why, and what you may and may not do with it.
+
 MIT License
 
 Copyright (c) 2025 jkqt

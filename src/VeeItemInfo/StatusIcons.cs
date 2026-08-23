@@ -31,6 +31,14 @@ internal static class StatusIcons
     private static TMP_SpriteAsset? spriteAsset;
     private static Texture2D? atlas;
 
+    /// <summary>
+    /// Source textures this class created rather than borrowed. Scraped icons belong to the
+    /// game and must never be destroyed; anything loaded from an embedded resource is ours
+    /// and leaks one texture per atlas rebuild if it is not cleaned up. Rebuilds happen on
+    /// every hot reload and on every HUD rebuild, so that adds up.
+    /// </summary>
+    private static readonly List<Texture2D> OwnedSources = new();
+
     // Building involves a full scene scan, so a failed attempt must never be retried on
     // the next frame. Retries are spaced out and capped: the status bar may genuinely not
     // exist yet on the first few tries, but if it is never going to work we stop paying
@@ -144,6 +152,13 @@ internal static class StatusIcons
             icons.Add(IconSource.FromSprite("ExtraStamina", staminaIcon));
         }
 
+        // Two more indicators hang off the stamina bar as plain GameObjects rather than
+        // BarAfflictions, so they need fetching by hand. 'shield' is the invincibility
+        // marker; 'campfire' is what the game shows while you cannot get hungry, and its
+        // artwork is the campfire we want for the cooking hint.
+        AddBarIndicator(icons, seen, staminaBar?.shield, "Shield");
+        AddBarIndicator(icons, seen, staminaBar?.campfire, "Cook");
+
         // A stand-in for "some item", used where a description needs to talk about an item
         // without naming one. BingBong is the game's own mascot and reads as generic.
         Texture2D? genericItem = FindItemIcon("BingBong");
@@ -152,12 +167,55 @@ internal static class StatusIcons
             icons.Add(IconSource.FromTexture("Item", genericItem));
         }
 
+        // "You float." Scout's Initiative drops your gravity rather than granting speed, and
+        // the balloon bunch is the game's own picture of that - no status icon exists for it.
+        Texture2D? floaty = FindItemIcon("BalloonBunch") ?? FindItemIcon("Balloon");
+        if (floaty != null && seen.Add("Float"))
+        {
+            icons.Add(IconSource.FromTexture("Float", floaty));
+        }
+
+        // The one icon that has to be shipped. Numbness is not a STATUSTYPE and has no
+        // BarAffliction, so there is nothing in the scene to scrape - see assets/NOTICE.md
+        // for why this file is here and what its licensing is.
+        Texture2D? numb = LoadEmbedded("VeeItemInfo.numbness.png");
+        if (numb != null && seen.Add("Numb"))
+        {
+            OwnedSources.Add(numb);
+            icons.Add(IconSource.FromTexture("Numb", numb));
+        }
+
         if (icons.Count == 0)
         {
             return;
         }
 
         BuildAtlas(icons);
+    }
+
+    /// <summary>
+    /// Pulls the sprite out of one of the stamina bar's loose indicator objects. The Image
+    /// may sit on the object itself or on a child, and the object is usually inactive -
+    /// GetComponentInChildren needs includeInactive for that.
+    /// </summary>
+    private static void AddBarIndicator(List<IconSource> icons, HashSet<string> seen, GameObject? host, string name)
+    {
+        if (host == null || seen.Contains(name))
+        {
+            return;
+        }
+
+        UnityEngine.UI.Image? image = host.GetComponentInChildren<UnityEngine.UI.Image>(includeInactive: true);
+        Sprite? sprite = image?.sprite;
+        if (sprite == null || sprite.texture == null)
+        {
+            return;
+        }
+
+        if (seen.Add(name))
+        {
+            icons.Add(IconSource.FromSprite(name, sprite));
+        }
     }
 
     /// <summary>
@@ -188,6 +246,49 @@ internal static class StatusIcons
     }
 
     /// <summary>
+    /// Loads a PNG compiled into this assembly. The only shipped artwork is the numbness
+    /// icon; everything else comes from the running game and is stored nowhere.
+    ///
+    /// The texture is created readable and flagged HideAndDontSave, like the scraped ones,
+    /// so a scene load cannot unload it out from under the atlas.
+    /// </summary>
+    private static Texture2D? LoadEmbedded(string resourceName)
+    {
+        using System.IO.Stream? stream = typeof(StatusIcons).Assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            Plugin.Log.LogWarning($"Embedded resource '{resourceName}' not found; its icon will fall back to text.");
+            return null;
+        }
+
+        byte[] bytes = new byte[stream.Length];
+        int read = 0;
+        while (read < bytes.Length)
+        {
+            int got = stream.Read(bytes, read, bytes.Length - read);
+            if (got <= 0)
+            {
+                break;
+            }
+
+            read += got;
+        }
+
+        Texture2D texture = new(2, 2, TextureFormat.RGBA32, mipChain: false)
+        {
+            hideFlags = HideFlags.HideAndDontSave,
+        };
+
+        if (!texture.LoadImage(bytes))
+        {
+            UnityEngine.Object.Destroy(texture);
+            return null;
+        }
+
+        return texture;
+    }
+
+    /// <summary>
     /// Looks up an item's icon by prefab name through the game's own item database. Used for
     /// descriptions that need to show an item rather than a status.
     /// </summary>
@@ -215,6 +316,55 @@ internal static class StatusIcons
         return null;
     }
 
+    /// <summary>
+    /// Whether an icon should take the colour of the text beside it.
+    ///
+    /// TMP's <c>tint=1</c> multiplies the sprite by the surrounding text colour. That is
+    /// exactly right for the game's status icons, which are white silhouettes coloured by
+    /// their UI Image at runtime - multiplying white by the status colour reproduces what the
+    /// HUD shows. It is exactly wrong for art that already carries its own colours: the
+    /// numbness mushrooms, and the item icons pulled from ItemDatabase. Multiplying those by
+    /// anything darkens them, which is how tinting a mushroom by its own pale stem colour
+    /// turned the whole icon muddy.
+    ///
+    /// Decided by looking at the texture rather than by keeping a list of names, because a
+    /// list would silently rot the first time the game recolours an icon.
+    /// </summary>
+    private static bool ShouldTint(Texture2D texture)
+    {
+        const float SaturationThreshold = 0.2f;
+        const float ColouredPixelShare = 0.15f;
+
+        // A coarse grid is plenty: this only has to tell a flat silhouette from artwork, and
+        // it runs once per icon at build time rather than per frame.
+        int step = Mathf.Max(1, Mathf.Min(texture.width, texture.height) / 24);
+        int opaque = 0;
+        int coloured = 0;
+
+        for (int y = 0; y < texture.height; y += step)
+        {
+            for (int x = 0; x < texture.width; x += step)
+            {
+                Color pixel = texture.GetPixel(x, y);
+                if (pixel.a < 0.5f)
+                {
+                    continue;
+                }
+
+                opaque++;
+                float max = Mathf.Max(pixel.r, Mathf.Max(pixel.g, pixel.b));
+                float min = Mathf.Min(pixel.r, Mathf.Min(pixel.g, pixel.b));
+                if (max > 0f && (max - min) / max > SaturationThreshold)
+                {
+                    coloured++;
+                }
+            }
+        }
+
+        // No opaque pixels at all means nothing to judge; tinting is the safer default.
+        return opaque == 0 || (float)coloured / opaque < ColouredPixelShare;
+    }
+
     private static void BuildAtlas(List<IconSource> icons)
     {
         Shader shader = Shader.Find("TextMeshPro/Sprite");
@@ -226,11 +376,16 @@ internal static class StatusIcons
         // Source textures are GPU-side and usually not CPU-readable, so blit each one into
         // a readable copy before packing.
         Texture2D[] copies = new Texture2D[icons.Count];
+
+        // Whether each icon's own art is already coloured, decided by looking at it rather
+        // than by keeping a list that would rot. See ShouldTint for why it matters.
+        bool[] tintable = new bool[icons.Count];
         try
         {
             for (int i = 0; i < icons.Count; i++)
             {
                 copies[i] = MakeReadable(icons[i].Texture);
+                tintable[i] = ShouldTint(copies[i]);
             }
 
             atlas = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false);
@@ -293,7 +448,7 @@ internal static class StatusIcons
                 // Normalise against height so every icon renders at the same visual size,
                 // whatever its source resolution. ApplyScale turns this into real metrics.
                 Aspects.Add((float)w / h);
-                Tags[name] = $"<sprite name=\"{name}\" tint=1>";
+                Tags[name] = $"<sprite name=\"{name}\" tint={(tintable[i] ? 1 : 0)}>";
             }
 
             asset.UpdateLookupTables();
@@ -314,7 +469,19 @@ internal static class StatusIcons
             Alias("Drowsy", "Sleepy");
             Alias("ExtraStamina", "Extra Stamina");
 
-            Plugin.Log.LogInfo($"Status icons ready: {icons.Count} packed into a {atlas.width}x{atlas.height} atlas.");
+            // Name the untinted ones: an icon rendering muddy is almost always this decision
+            // going the wrong way, and it is invisible without being told.
+            List<string> ownColours = new();
+            for (int i = 0; i < icons.Count; i++)
+            {
+                if (!tintable[i])
+                {
+                    ownColours.Add(icons[i].Name);
+                }
+            }
+
+            Plugin.Log.LogInfo($"Status icons ready: {icons.Count} packed into a {atlas.width}x{atlas.height} atlas. "
+                + $"Drawn in their own colours (untinted): {(ownColours.Count == 0 ? "none" : string.Join(", ", ownColours))}.");
         }
         finally
         {
@@ -325,6 +492,18 @@ internal static class StatusIcons
                     UnityEngine.Object.Destroy(copy);
                 }
             }
+
+            // The packed atlas is the only copy that needs to survive, so our own source
+            // textures go too. Borrowed ones are not in this list and are left alone.
+            foreach (Texture2D owned in OwnedSources)
+            {
+                if (owned != null)
+                {
+                    UnityEngine.Object.Destroy(owned);
+                }
+            }
+
+            OwnedSources.Clear();
         }
     }
 

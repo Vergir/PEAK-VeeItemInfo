@@ -12,10 +12,19 @@ internal static class EffectColors
     /// <summary>Used for plain descriptive text, and as the fallback for unknown statuses.</summary>
     internal const string Neutral = "<#CCCCCC>";
 
-    /// <summary>For a value that applies to several statuses at once and so belongs to none.</summary>
-    internal const string White = "<#FFFFFF>";
-    internal const string Positive = "<#DDFFDD>";
-    internal const string Negative = "<#FFCCCC>";
+    /// <summary>
+    /// For a value that applies to several statuses at once and so belongs to none. Matches
+    /// the cream the game uses for item names, rather than pure white - a figure with no
+    /// status of its own should look like it belongs to the HUD, not shout over it.
+    /// </summary>
+    internal const string White = "<#F2ECDE>";
+    /// <summary>
+    /// Saturated rather than pastel. These carry the whole meaning of a cooking hint or a
+    /// random-effect marker, with no number beside them to lean on, so they have to hold
+    /// their own against a bright HUD.
+    /// </summary>
+    internal const string Positive = "<#5FD35F>";
+    internal const string Negative = "<#F55C5C>";
 
     private static readonly Dictionary<string, string> Colors = new()
     {
@@ -34,10 +43,21 @@ internal static class EffectColors
         { "Thorns", "<#768E00>" },
         { "Shield", "<#D48E00>" },
 
+        // Colour-picked from the game's own status icons rather than guessed. Shield and
+        // Weight were sampled too and confirmed the existing values.
+        { "Spores", "<#A55B63>" },
+
+        // The cooking hint. Not a status - it is the campfire icon's own orange.
+        { "Cook", "<#E8722A>" },
+
+        // Numbness has no status bar to borrow a colour from, so this is sampled from the
+        // icon itself - the pale stems and spots rather than the darker caps, which reads
+        // against the overlay where the cap colour would not.
+        { "Numb", "<#D3AC9B>" },
+
         // Present in STATUSTYPE as of PEAK 2.1.a but never given a colour by the
         // original mod. Listed explicitly so the gap is visible rather than silent.
-        // TODO: replace with the game's own status UI colours.
-        { "Spores", Neutral },
+        // None of these appears on any item in the game, so none has been sampled yet.
         { "Web", Neutral },
         { "Arrow", Neutral },
         { "Petrify", Neutral },

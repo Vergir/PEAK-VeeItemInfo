@@ -12,6 +12,15 @@
   </PropertyGroup>
 
   <!--
+  Artwork from the game, embedded because it cannot be scraped at runtime. See
+  assets/NOTICE.md for provenance and licensing - it is NOT covered by this repo's MIT
+  licence. Everything else the overlay draws is taken from the live game and stored nowhere.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../assets/numbness.png" LogicalName="VeeItemInfo.numbness.png" />
+  </ItemGroup>
+
+  <!--
   How to include thunderstore mods as dependencies via nuget
 
   We have already added the windows10ce nuget feed to this project
