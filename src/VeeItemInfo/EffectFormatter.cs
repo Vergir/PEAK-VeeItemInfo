@@ -53,12 +53,33 @@ internal static class EffectFormatter
     internal const string Infinity = "∞";
 
     /// <summary>
-    /// Every status a player can carry that an item can clear, in the order they read best.
-    /// Curse is not in the list: almost everything excludes it, so it is handled separately.
+    /// The statuses a clear-all actually removes, in display order.
+    ///
+    /// Not every status, and not the display order's own list - the two were one array
+    /// until this split, and it was quietly lying. Both of the game's clear-all paths refuse
+    /// the same four: <c>CharacterAfflictions.StatusIsCurable</c> returns false for Crab,
+    /// Weight, Thorns and Arrow, and <c>Action_ClearAllStatus.defaultExclusions</c> holds
+    /// exactly those four as well. **Thorns was in the old list**, so every clear-all item in
+    /// the game - Napberry, Cure-All, Pandora's Lunchbox, the Blowgun dart - promised to
+    /// strip 100 thorns that it has never once removed.
+    ///
+    /// Web and FlyTrap *are* curable and are still left out, for a different reason: neither
+    /// has a scrapeable icon, and <see cref="StatusIcons.Tag"/> falls back to the status name
+    /// in capitals, so listing them would put English back on the line. No item in 2.1.a
+    /// inflicts either.
+    ///
+    /// Curse is not here because almost every clear-all excludes it; callers add it when
+    /// their own flag says it is included.
     /// </summary>
-    internal static readonly string[] AllStatuses =
+    internal static readonly string[] Clearable =
     {
-        "Hunger", "Injury", "Poison", "Spores", "Cold", "Hot", "Drowsy", "Thorns",
+        CharacterAfflictions.STATUSTYPE.Hunger.ToString(),
+        CharacterAfflictions.STATUSTYPE.Injury.ToString(),
+        CharacterAfflictions.STATUSTYPE.Poison.ToString(),
+        CharacterAfflictions.STATUSTYPE.Spores.ToString(),
+        CharacterAfflictions.STATUSTYPE.Cold.ToString(),
+        CharacterAfflictions.STATUSTYPE.Hot.ToString(),
+        CharacterAfflictions.STATUSTYPE.Drowsy.ToString(),
     };
 
     /// <summary>
@@ -163,13 +184,18 @@ internal static class EffectFormatter
     }
 
     /// <summary>
-    /// "Clear all status" as one line: the amount, then the icons it actually clears.
-    /// Dropping the excluded ones from the run says which are spared without naming them.
+    /// "Clear all status", one keyed line per status actually removed. Leaving the excluded
+    /// ones out of the run says which are spared without naming them.
+    ///
+    /// Collapsing them into a shared "-100 &lt;seven icons&gt;" line was tried and dropped: it
+    /// reads as a single pooled effect, which is what <see cref="SharedBudget"/> means, and
+    /// clearing all status is emphatically not that. Every status loses its full 100.
     /// </summary>
-    internal static string ClearedStatuses(bool excludeCurse, IEnumerable<CharacterAfflictions.STATUSTYPE>? exclusions)
+    internal static List<EffectLine> ClearedStatuses(bool excludeCurse,
+        IEnumerable<CharacterAfflictions.STATUSTYPE>? exclusions)
     {
         List<string> cleared = new();
-        foreach (string status in AllStatuses)
+        foreach (string status in Clearable)
         {
             bool skipped = false;
             if (exclusions != null)
@@ -192,29 +218,18 @@ internal static class EffectFormatter
 
         if (!excludeCurse)
         {
-            cleared.Add("Curse");
+            cleared.Add(CharacterAfflictions.STATUSTYPE.Curse.ToString());
         }
 
-        if (cleared.Count == 0)
-        {
-            return "";
-        }
-
-        // One line per status. Collapsing them into a shared "-100 <eight icons>" line read
-        // as a single pooled effect, which is what SharedBudget means - and clearing all
-        // status is emphatically not that. Every status loses its full 100.
-        StringBuilder lines = new();
+        List<EffectLine> lines = new();
         foreach (string status in cleared)
         {
-            if (lines.Length > 0)
-            {
-                lines.Append('\n');
-            }
-
-            lines.Append(Token(-1f, status));
+            // A clear lands the instant the action runs, whichever of the two components
+            // delivered it, and -1 is a full bar however much of it you were carrying.
+            lines.Add(new EffectLine(Token(-1f, status), Onset.Instant, status, -1f, clears: true));
         }
 
-        return lines.ToString();
+        return lines;
     }
 
     /// <summary>
@@ -243,25 +258,60 @@ internal static class EffectFormatter
         return Token(amount, effect) + "\n";
     }
 
-    /// <summary>A status change spread over time, e.g. "+40 &lt;skull&gt; 8s".</summary>
-    internal static string EffectOverTime(float amountPerSecond, float rate, float time, string effect)
+    /// <summary>
+    /// A status change spread over time, in whichever of the two forms tells the truth.
+    /// **This is the only place that choice is made.** It used to be picked branch by
+    /// branch, which is how Heat Pack ended up stating a total twenty times the scale
+    /// maximum while the item beside it stated a rate.
+    ///
+    /// **Total and duration** - "-35 &lt;injury&gt; / 15s" - is the default, and the form
+    /// worth having: it answers "what does this do to me", and a duration you can wait out.
+    ///
+    /// **Rate and duration** - "-6 &lt;cold&gt; /s → 360s" - where the total runs past a full
+    /// bar and so describes arithmetic rather than anything a player can feel. A Heat Pack's
+    /// 6 a second across 360 seconds multiplies out to 2160 on a scale that stops at 100;
+    /// the rate is what you get and the duration is how long you keep getting it.
+    ///
+    /// **Rate alone** is <see cref="PerSecond"/>, called directly by the one case with no
+    /// duration to state at all: a lantern warms you until its fuel runs out, and stating a
+    /// total would make a nearly-spent lantern read differently from a full one.
+    ///
+    /// The threshold is a full bar, because that is the point past which a figure stops
+    /// meaning anything - you cannot be more than 100 cold.
+    /// </summary>
+    internal static string OverTime(float total, float seconds, string effect)
     {
-        if (amountPerSecond == 0f || time == 0f)
+        if (total == 0f || seconds <= 0f)
         {
             return "";
         }
 
-        float total = amountPerSecond * time * (1f / rate);
-        return Token(total, effect) + " / " + Num(time) + "s\n";
+        if (Mathf.Abs(total) > 1f)
+        {
+            return PerSecond(total / seconds, effect)
+                + EffectColors.Neutral + Arrow + Seconds(seconds) + "</color>";
+        }
+
+        // The suffix sits inside a colour tag on purpose. Left bare it rendered in TMP's
+        // default pure white, brighter than the figure in front of it - the known case in
+        // the white-leak audit.
+        return Token(total, effect) + EffectColors.Neutral + " / " + Seconds(seconds) + "</color>";
     }
 
     /// <summary>
-    /// Describes an affliction. Dispatches on <see cref="Affliction.AfflictionType"/>;
-    /// an unrecognised type returns an empty string rather than guessing.
+    /// Describes an affliction as keyed lines. Dispatches on
+    /// <see cref="Affliction.AfflictionType"/>; an unrecognised type returns nothing rather
+    /// than guessing.
+    ///
+    /// Every branch states its own <see cref="Onset"/>, and that is the point of the split:
+    /// afflictions used to be posted wholesale into the "timed" bucket, so
+    /// Affliction_ClearAllStatus - which fires in OnApplied and is as instant as anything in
+    /// the game - sorted below every instant line, while the identical Action_ClearAllStatus
+    /// sorted above them.
     /// </summary>
-    internal static string Affliction(PeakAffliction affliction)
+    internal static List<EffectLine> Affliction(PeakAffliction affliction)
     {
-        string result = "";
+        List<EffectLine> lines = new();
 
         if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.FasterBoi)
         {
@@ -270,26 +320,31 @@ internal static class EffectFormatter
             // the infinity mark would say the wrong thing. The run and climb windows differ
             // by climbDelay; the shorter one is the honest figure to show.
             Affliction_FasterBoi effect = (Affliction_FasterBoi)affliction;
-            result += EffectColors.Neutral + Seconds(effect.totalTime) + "</color> "
+            string text = EffectColors.Neutral + Seconds(effect.totalTime) + "</color> "
                 + IconRun(new[] { "Extra Stamina", "Extra Stamina", "Extra Stamina" });
 
+            // The drowsiness Energy Drink hands back when its boost ends belongs on this
+            // line rather than on one of its own. It is a single statement - faster now,
+            // sleepy afterwards - and the arrow is the word "afterwards". An effect that
+            // lands when a timer runs out is never a line of its own.
             if (effect.drowsyOnEnd > 0f)
             {
-                result += EffectColors.Neutral + Arrow + "</color>" + Token(effect.drowsyOnEnd, "Drowsy");
+                text += EffectColors.Neutral + Arrow + "</color>" + Token(effect.drowsyOnEnd, "Drowsy");
             }
 
-            result += "\n";
+            lines.Add(new EffectLine(text, Onset.OverTime, "Extra Stamina", 1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ClearAllStatus)
         {
             Affliction_ClearAllStatus effect = (Affliction_ClearAllStatus)affliction;
-            result += ClearedStatuses(effect.excludeCurse, null) + "\n";
+            lines.AddRange(ClearedStatuses(effect.excludeCurse, null));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AddBonusStamina)
         {
             // Was "GAIN 100 EXTRA STAMINA" - the last piece of prose left on a common path.
             Affliction_AddBonusStamina effect = (Affliction_AddBonusStamina)affliction;
-            result += Token(effect.staminaAmount, "Extra Stamina") + "\n";
+            lines.Add(new EffectLine(Token(effect.staminaAmount, "Extra Stamina"),
+                Onset.Instant, "Extra Stamina", effect.staminaAmount));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.InfiniteStamina)
         {
@@ -298,17 +353,19 @@ internal static class EffectFormatter
             // longer running window than a climbing one, the shorter figure is shown: it is
             // the one you can rely on whatever you are doing.
             Affliction_InfiniteStamina effect = (Affliction_InfiniteStamina)affliction;
-            result += InfiniteStamina(effect.totalTime) + "\n";
+            lines.Add(new EffectLine(InfiniteStamina(effect.totalTime),
+                Onset.OverTime, "Extra Stamina", 1f));
 
             if (effect.drowsyAffliction != null)
             {
-                result += Affliction(effect.drowsyAffliction);
+                lines.AddRange(Affliction(effect.drowsyAffliction));
             }
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AdjustStatus)
         {
             Affliction_AdjustStatus effect = (Affliction_AdjustStatus)affliction;
-            result += Token(effect.statusAmount, effect.statusType.ToString()) + "\n";
+            lines.Add(new EffectLine(Token(effect.statusAmount, effect.statusType.ToString()),
+                Onset.Instant, effect.statusType.ToString(), effect.statusAmount));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.DrowsyOverTime)
         {
@@ -317,25 +374,26 @@ internal static class EffectFormatter
             // against 2.1.a). The original rounded to multiples of 2.5 for no reason, which
             // could be off by up to 1.25.
             Affliction_AdjustDrowsyOverTime effect = (Affliction_AdjustDrowsyOverTime)affliction;
-            result += EffectOverTime(effect.statusPerSecond, 1f, effect.totalTime, "Drowsy");
+            string drowsy = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Drowsy");
+            if (drowsy.Length > 0)
+            {
+                lines.Add(new EffectLine(drowsy, Onset.OverTime, "Drowsy", effect.statusPerSecond));
+            }
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ColdOverTime)
         {
             // Heat Pack, and the last prose in the mod - it used to read
             // "GAIN/REMOVE {n} COLD OVER {n}s". The sign says which way the status moves,
-            // the icon says what moves, and the arrow says how long it keeps moving.
+            // the icon says what moves, and the duration says how long it keeps moving.
             //
-            // A rate and a duration rather than a total, unlike the drowsy branch above.
-            // UpdateEffect applies statusPerSecond * deltaTime every frame against a scale
-            // that stops at 100, so a Heat Pack's rate across its full time multiplies out
-            // to many times that maximum - a total here is arithmetic nobody can feel. The
-            // rate is what you get; the duration is how long you keep getting it.
+            // UpdateEffect applies statusPerSecond * deltaTime every frame, so the total is
+            // the rate times the time - which here is 2160 on a scale that stops at 100.
+            // OverTime sees that and states the rate instead; the branch does not choose.
             Affliction_AdjustColdOverTime effect = (Affliction_AdjustColdOverTime)affliction;
-            string rate = PerSecond(effect.statusPerSecond, "Cold");
-            if (rate.Length > 0)
+            string cold = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Cold");
+            if (cold.Length > 0)
             {
-                result += rate + EffectColors.Neutral + Arrow
-                    + Seconds(effect.totalTime) + "</color>\n";
+                lines.Add(new EffectLine(cold, Onset.OverTime, "Cold", effect.statusPerSecond));
             }
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Chaos)
@@ -343,53 +401,68 @@ internal static class EffectFormatter
             // Cleared, then an unknown amount handed straight back. Showing the pair on one
             // line per status is what makes the randomisation legible - two separate blocks
             // read as two unrelated effects rather than one shuffle.
-            foreach (string status in AllStatuses)
+            //
+            // OnApplied calls ClearAllStatus(excludeCurse: false) and then redistributes over
+            // its own list of eight: Cold, Hot, Poison, Drowsy, Injury, Hunger, Spores and
+            // Curse. So Curse is both cleared and refillable, and Thorns is in neither half.
+            // Thorns was in this loop until the clearable set was split out, carrying a
+            // hand-written exception that said the randomiser could not hand thorns back;
+            // the exception is gone because the status never belonged here at all.
+            foreach (string status in Clearable)
             {
-                result += Token(-1f, status);
-
-                // Everything is cleared, but Thorns is the one status the randomiser cannot
-                // hand back, so it gets no "-> +?" tail.
-                if (status != "Thorns")
-                {
-                    result += EffectColors.Neutral + Arrow + "</color>"
-                        + EffectColors.Get(status) + "+?" + " " + StatusIcons.Tag(status) + "</color>";
-                }
-
-                result += "\n";
+                lines.Add(new EffectLine(Reshuffled(status), Onset.Instant, status, -1f));
             }
+
+            string curse = CharacterAfflictions.STATUSTYPE.Curse.ToString();
+            lines.Add(new EffectLine(Reshuffled(curse), Onset.Instant, curse, -1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Invincibility)
         {
             // Fortified Milk and the healing amulet both grant this. It was going unreported
             // entirely - there was no branch for it, so the shield line simply never appeared.
-            result += EffectColors.Neutral + Seconds(affliction.totalTime) + "</color> "
-                + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>\n";
+            lines.Add(new EffectLine(
+                EffectColors.Neutral + Seconds(affliction.totalTime) + "</color> "
+                + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
+                Onset.OverTime, "Shield", 1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.RadiateInfiniteStam)
         {
             // Scout's Ambition. Infinite stamina for everyone standing close enough, so the
             // radius is as much the point as the duration.
             Affliction_RadiateInfiniteStam effect = (Affliction_RadiateInfiniteStam)affliction;
-            result += InfiniteStamina(effect.totalTime)
-                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>\n";
+            lines.Add(new EffectLine(
+                InfiniteStamina(effect.totalTime)
+                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>",
+                Onset.OverTime, "Extra Stamina", 1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.MassSuperJump)
         {
             // Scout's Initiative. It does not grant speed - it launches everyone nearby and
             // drops their gravity, so the balloon is the right symbol for what you feel.
             Affliction_MassSuperJump effect = (Affliction_MassSuperJump)affliction;
-            result += EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
+            lines.Add(new EffectLine(
+                EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
                 + StatusIcons.Tag("Float")
-                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>\n";
+                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>",
+                Onset.OverTime, "Float", 1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Sunscreen)
         {
             // Just how long it lasts. Naming the biome it protects you in was the only
             // English left on this line, and the item's own icon already says what it is.
             Affliction_Sunscreen effect = (Affliction_Sunscreen)affliction;
-            result += EffectColors.Neutral + Seconds(effect.totalTime) + "</color>\n";
+            lines.Add(new EffectLine(EffectColors.Neutral + Seconds(effect.totalTime) + "</color>",
+                Onset.OverTime));
         }
 
-        return result;
+        return lines;
     }
+
+    /// <summary>
+    /// One status wiped and an unknown amount handed straight back, as a chaos berry does.
+    /// </summary>
+    private static string Reshuffled(string status) =>
+        Token(-1f, status) + EffectColors.Neutral + Arrow + "</color>"
+        + EffectColors.Get(status) + "+? " + StatusIcons.Tag(status) + "</color>";
+
 }

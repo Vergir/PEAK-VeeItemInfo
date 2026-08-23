@@ -37,10 +37,9 @@ internal static class ItemDescriptionBuilder
         Component[] itemComponents = itemGameObj.GetComponents(typeof(Component));
         DescriptionLayout layout = new();
 
-        // Effect lines are collected rather than added straight to the layout so instant
-        // changes read before timed ones. Energy Drink takes 100 Drowsy off you and hands 25
-        // back when its boost ends; printed the other way round the overlay says the opposite
-        // of what happens.
+        // Effect lines are collected rather than added straight to the layout, because
+        // where a line belongs is not something a branch can know. Each states what it means
+        // - when it lands, which status it moves, which way - and EffectOrder places it.
         //
         // Actions flagged OnConsumed only fire when the item is eaten or drunk, which means
         // an item with no Action_Consume never runs them at all. Cooking an amulet adds an
@@ -48,9 +47,7 @@ internal static class ItemDescriptionBuilder
         // cooked Scout's Ambition was advertising +10 stamina it can never hand out.
         bool consumable = itemGameObj.GetComponent<Action_Consume>() != null;
 
-        List<string> primary = new();
-        List<string> instant = new();
-        List<string> timed = new();
+        List<EffectLine> effects = new();
 
         float weight = Ascents.itemWeightModifier > 0
             ? (item.carryWeight + Ascents.itemWeightModifier) * 2.5f
@@ -75,7 +72,8 @@ internal static class ItemDescriptionBuilder
                 Action_RestoreHunger effect = (Action_RestoreHunger)itemComponents[i];
                 if (consumable || !effect.OnConsumed)
                 {
-                    Collect(primary, EffectFormatter.Effect(effect.restorationAmount * -1f, "Hunger"));
+                    Collect(effects, i, EffectFormatter.Effect(effect.restorationAmount * -1f, "Hunger"),
+                        Onset.Instant, "Hunger", effect.restorationAmount * -1f);
                 }
             }
             else if (itemComponents[i].GetType() == typeof(Action_GiveExtraStamina))
@@ -83,7 +81,8 @@ internal static class ItemDescriptionBuilder
                 Action_GiveExtraStamina effect = (Action_GiveExtraStamina)itemComponents[i];
                 if (consumable || !effect.OnConsumed)
                 {
-                    Collect(primary, EffectFormatter.Effect(effect.amount, "Extra Stamina"));
+                    Collect(effects, i, EffectFormatter.Effect(effect.amount, "Extra Stamina"),
+                        Onset.Instant, "Extra Stamina", effect.amount);
                 }
             }
             else if (itemComponents[i].GetType() == typeof(Action_InflictPoison))
@@ -92,8 +91,10 @@ internal static class ItemDescriptionBuilder
                 // suffix already says this is spread over time, and the lead-in was the
                 // only English on an otherwise symbolic line.
                 Action_InflictPoison effect = (Action_InflictPoison)itemComponents[i];
-                Collect(timed,
-                    EffectFormatter.EffectOverTime(effect.poisonPerSecond, 1f, effect.inflictionTime, "Poison"));
+                Collect(effects, i,
+                    EffectFormatter.OverTime(effect.poisonPerSecond * effect.inflictionTime,
+                        effect.inflictionTime, "Poison"),
+                    Onset.OverTime, "Poison", effect.poisonPerSecond);
             }
             else if (itemComponents[i].GetType() == typeof(Action_AddOrRemoveThorns))
             {
@@ -101,14 +102,17 @@ internal static class ItemDescriptionBuilder
                 // UpdateWeight sets Thorns to 0.025 per *increment* returned by
                 // GetTotalThornStatusIncrements, and in-game testing on Prickleberry shows a
                 // thorn is worth two of those - 2 thorns read as 10, not 5. So 0.05 per thorn.
-                Collect(instant, EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns"));
+                Collect(effects, i, EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns"),
+                    Onset.Instant, "Thorns", effect.thornCount * 0.05f);
             }
             else if (itemComponents[i].GetType() == typeof(Action_ModifyStatus))
             {
                 Action_ModifyStatus effect = (Action_ModifyStatus)itemComponents[i];
                 if (consumable || !effect.OnConsumed)
                 {
-                    Collect(instant, EffectFormatter.Effect(effect.changeAmount, effect.statusType.ToString()));
+                    Collect(effects, i,
+                        EffectFormatter.Effect(effect.changeAmount, effect.statusType.ToString()),
+                        Onset.Instant, effect.statusType.ToString(), effect.changeAmount);
 
                     // CharacterAfflictions.SubtractStatus takes the same amount off Spores
                     // whenever Poison is reduced deliberately:
@@ -123,14 +127,15 @@ internal static class ItemDescriptionBuilder
                     // the components alone do not show it.
                     if (effect.statusType == CharacterAfflictions.STATUSTYPE.Poison && effect.changeAmount < 0f)
                     {
-                        Collect(instant, EffectFormatter.Effect(effect.changeAmount, "Spores"));
+                        Collect(effects, i, EffectFormatter.Effect(effect.changeAmount, "Spores"),
+                            Onset.Instant, "Spores", effect.changeAmount);
                     }
                 }
             }
             else if (itemComponents[i].GetType() == typeof(Action_ApplyAffliction))
             {
                 Action_ApplyAffliction effect = (Action_ApplyAffliction)itemComponents[i];
-                Collect(timed, EffectFormatter.Affliction(effect.affliction));
+                Collect(effects, i, EffectFormatter.Affliction(effect.affliction));
             }
             else if (itemComponents[i].GetType() == typeof(Action_Numb))
             {
@@ -138,7 +143,8 @@ internal static class ItemDescriptionBuilder
                 // cook one first - and the only icon in the mod that had to be shipped
                 // rather than scraped, because numbness is not a STATUSTYPE.
                 Action_Numb effect = (Action_Numb)itemComponents[i];
-                Collect(timed, EffectFormatter.Colored(EffectFormatter.Seconds(effect.numbAmount), "Numb"));
+                Collect(effects, i, EffectFormatter.Colored(EffectFormatter.Seconds(effect.numbAmount), "Numb"),
+                    Onset.OverTime, "Numb", 1f);
             }
             else if (itemComponents[i].GetType() == typeof(Action_Die))
             {
@@ -149,12 +155,16 @@ internal static class ItemDescriptionBuilder
             }
             else if (itemComponents[i].GetType() == typeof(Action_RandomMushroomEffect))
             {
-                Collect(instant, DescribeMushroom((Action_RandomMushroomEffect)itemComponents[i]));
+                // No status of its own - four question marks standing in for whatever the
+                // berry rolls - so it trails the instant lines rather than claiming a place
+                // among them.
+                Collect(effects, i, DescribeMushroom((Action_RandomMushroomEffect)itemComponents[i]),
+                    Onset.Instant);
             }
             else if (itemComponents[i].GetType() == typeof(Action_ClearAllStatus))
             {
                 Action_ClearAllStatus effect = (Action_ClearAllStatus)itemComponents[i];
-                Collect(instant,
+                Collect(effects, i,
                     EffectFormatter.ClearedStatuses(effect.excludeCurse, effect.otherExclusions));
             }
             else if (itemComponents[i].GetType() == typeof(Action_ApplyMassAffliction))
@@ -163,10 +173,10 @@ internal static class ItemDescriptionBuilder
                 // the effects speak for themselves, and a header was a whole line of English
                 // for a distinction no item ever needs stated twice.
                 Action_ApplyMassAffliction effect = (Action_ApplyMassAffliction)itemComponents[i];
-                Collect(timed, EffectFormatter.Affliction(effect.affliction));
+                Collect(effects, i, EffectFormatter.Affliction(effect.affliction));
                 for (int j = 0; j < effect.extraAfflictions.Length; j++)
                 {
-                    Collect(timed, EffectFormatter.Affliction(effect.extraAfflictions[j]));
+                    Collect(effects, i, EffectFormatter.Affliction(effect.extraAfflictions[j]));
                 }
             }
             else if (itemComponents[i].GetType() == typeof(Action_RaycastDart))
@@ -174,12 +184,12 @@ internal static class ItemDescriptionBuilder
                 Action_RaycastDart effect = (Action_RaycastDart)itemComponents[i];
                 for (int j = 0; j < effect.afflictionsOnHit.Length; j++)
                 {
-                    Collect(timed, EffectFormatter.Affliction(effect.afflictionsOnHit[j]));
+                    Collect(effects, i, EffectFormatter.Affliction(effect.afflictionsOnHit[j]));
                 }
             }
             else if (itemComponents[i].GetType() == typeof(Lantern))
             {
-                Collect(timed, DescribeLantern(itemGameObj));
+                Collect(effects, i, DescribeLantern(itemGameObj));
             }
             else if (itemComponents[i].GetType() == typeof(Constructable))
             {
@@ -223,18 +233,20 @@ internal static class ItemDescriptionBuilder
             }
             else if (itemComponents[i].GetType() == typeof(ShelfShroom))
             {
-                Collect(instant, DescribeHealingShroom((ShelfShroom)itemComponents[i]));
+                Collect(effects, i, DescribeHealingShroom((ShelfShroom)itemComponents[i]));
             }
             else if (itemComponents[i].GetType() == typeof(Action_MoraleBoost))
             {
                 Action_MoraleBoost effect = (Action_MoraleBoost)itemComponents[i];
-                Collect(instant, EffectFormatter.Effect(effect.baselineStaminaBoost, "Extra Stamina"));
+                Collect(effects, i, EffectFormatter.Effect(effect.baselineStaminaBoost, "Extra Stamina"),
+                    Onset.Instant, "Extra Stamina", effect.baselineStaminaBoost);
             }
             else if (itemComponents[i].GetType() == typeof(Dynamite))
             {
                 Dynamite effect = (Dynamite)itemComponents[i];
-                Collect(instant, EffectFormatter.Effect(
-                    effect.explosionPrefab.GetComponent<AOE>().statusAmount, "Injury"));
+                float injury = effect.explosionPrefab.GetComponent<AOE>().statusAmount;
+                Collect(effects, i, EffectFormatter.Effect(injury, "Injury"),
+                    Onset.Instant, "Injury", injury);
             }
             else if (itemComponents[i].GetType() == typeof(Action_Spawn))
             {
@@ -243,8 +255,9 @@ internal static class ItemDescriptionBuilder
                 {
                     RemoveAfterSeconds duration = effect.objectToSpawn.transform.Find("AOE")
                         .GetComponent<RemoveAfterSeconds>();
-                    Collect(timed,
-                        EffectColors.Neutral + EffectFormatter.Seconds(duration.seconds) + "</color>");
+                    Collect(effects, i,
+                        EffectColors.Neutral + EffectFormatter.Seconds(duration.seconds) + "</color>",
+                        Onset.OverTime);
                 }
             }
             else if (itemComponents[i].GetType() == typeof(Scorpion))
@@ -258,8 +271,9 @@ internal static class ItemDescriptionBuilder
                 // max(0.5, (1 - statusSum) + 0.05). statusSum runs 0..1, so the over-time
                 // part spans 50 at full status to 105 at none - more damage the healthier
                 // you are. The instant 2.5 is folded in rather than shown separately.
-                Collect(timed, EffectFormatter.Colored("50-105", "Poison")
-                    + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>");
+                Collect(effects, i, EffectFormatter.Colored("50-105", "Poison")
+                    + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>",
+                    Onset.OverTime, "Poison", 1f);
             }
             // 'is' rather than an exact match: CactusBall derives from StickyItemComponent
             // and is the only item carrying one in 2.1.a, so an exact check would read the
@@ -313,21 +327,26 @@ internal static class ItemDescriptionBuilder
                 // Slashes, not spaces: maxHealing is one pool spread across all six, not
                 // an allowance for each. This is the only item in 2.1.a that works this way,
                 // which is exactly why the slash form is reserved for it.
-                Collect(instant,
-                    EffectFormatter.SharedBudget(-effect.healingAffliction.maxHealing, HealAllStatuses));
+                // Ranked by the first status of its run, so the budget leads the amulet's
+                // three lines rather than sorting after the petrify it costs.
+                Collect(effects, i,
+                    EffectFormatter.SharedBudget(-effect.healingAffliction.maxHealing, HealAllStatuses),
+                    Onset.Instant, HealAllStatuses[0], -1f);
 
                 if (effect.invincibilityAffliction != null)
                 {
-                    Collect(timed, EffectColors.Neutral
+                    Collect(effects, i, EffectColors.Neutral
                         + EffectFormatter.Seconds(effect.invincibilityAffliction.totalTime) + "</color> "
-                        + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>");
+                        + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
+                        Onset.OverTime, "Shield", 1f);
                 }
 
                 // Petrify scales with how much healing was actually possible, clamped to
                 // this range, so a range is the honest thing to show.
-                Collect(instant, EffectColors.Get("Petrify") + "+"
+                Collect(effects, i, EffectColors.Get("Petrify") + "+"
                     + EffectFormatter.Scaled(effect.minPetrify) + "-" + EffectFormatter.Scaled(effect.maxPetrify)
-                    + " " + StatusIcons.Tag("Petrify") + "</color>");
+                    + " " + StatusIcons.Tag("Petrify") + "</color>",
+                    Onset.Instant, "Petrify", 1f);
             }
             else if (itemComponents[i].GetType() == typeof(Peak.Action_CloneSelectedItem))
             {
@@ -338,9 +357,10 @@ internal static class ItemDescriptionBuilder
                 // AddPetrify takes whole points on the 0-100 scale, unlike almost everything
                 // else here, so these are already display units. The two values are discrete
                 // - plain items versus mystical ones - so a slash, not a range.
-                Collect(instant, EffectColors.Get("Petrify") + "+"
+                Collect(effects, i, EffectColors.Get("Petrify") + "+"
                     + EffectFormatter.Num(effect.petrify) + "/" + EffectFormatter.Num(effect.petrifyMystical)
-                    + " " + StatusIcons.Tag("Petrify") + "</color>");
+                    + " " + StatusIcons.Tag("Petrify") + "</color>",
+                    Onset.Instant, "Petrify", 1f);
             }
             // Amulets are matched with 'is' rather than an exact type check: they all derive
             // from AmuletBase and each applies petrify through a different path.
@@ -351,9 +371,10 @@ internal static class ItemDescriptionBuilder
                 // real affliction as well as a cost. The Action_ApplyAffliction branch above
                 // matches on exact type and so never sees a subclass - this is the only
                 // place that affliction is read.
-                Collect(timed, EffectFormatter.Affliction(superJump.affliction));
+                Collect(effects, i, EffectFormatter.Affliction(superJump.affliction));
                 // AddStatus takes a 0-1 fraction, same scale as every other status.
-                Collect(instant, EffectFormatter.Effect(superJump.petrifyPerUse, "Petrify"));
+                Collect(effects, i, EffectFormatter.Effect(superJump.petrifyPerUse, "Petrify"),
+                    Onset.Instant, "Petrify", superJump.petrifyPerUse);
             }
             // 'is' rather than an exact match: ItemCooking declares UpdateCookedBehavior and
             // CookVisually virtual, so the game clearly anticipates subclasses even though
@@ -373,43 +394,57 @@ internal static class ItemDescriptionBuilder
             //                         thorns it inflicts still come through Action_AddOrRemoveThorns.
         }
 
-        EmitEffects(layout, primary, instant, timed);
+        EmitEffects(layout, effects);
         return layout.Render();
     }
 
-    /// <summary>Appends a line if it has anything in it. Keeps the branches free of guards.</summary>
-    private static void Collect(List<string> into, string? line)
+    /// <summary>
+    /// Keeps a finished line, with the keys <see cref="EffectOrder"/> sorts it by. Anything
+    /// empty is dropped here so the branches stay free of guards.
+    /// </summary>
+    private static void Collect(List<EffectLine> into, int source, string? text, Onset onset,
+        string status = "", float amount = 0f)
     {
-        if (!string.IsNullOrEmpty(line))
+        if (string.IsNullOrEmpty(text))
         {
-            into.Add(line!.Trim('\n'));
+            return;
+        }
+
+        string trimmed = text!.Trim('\n');
+        if (trimmed.Length > 0)
+        {
+            into.Add(new EffectLine(trimmed, onset, status, amount, source));
         }
     }
 
     /// <summary>
-    /// Writes the collected effect lines into the layout in reading order: what the item
-    /// does to your bars first, then anything that unfolds over time.
-    ///
-    /// Ordering is not cosmetic. Energy Drink strips 100 Drowsy the moment you drink it and
-    /// hands 25 back when the boost runs out; printed the other way round the overlay says
-    /// the opposite of what happens.
+    /// Keeps lines that already carry their own keys - anything routed through
+    /// <see cref="EffectFormatter.Affliction"/> - stamping the component they came from so
+    /// the final tiebreak has something to hold on to.
     /// </summary>
-    private static void EmitEffects(DescriptionLayout layout, List<string> primary, List<string> instant,
-        List<string> timed)
+    private static void Collect(List<EffectLine> into, int source, List<EffectLine> lines)
     {
-        foreach (string line in primary)
+        foreach (EffectLine line in lines)
         {
-            layout.Add(Block.Effects, line);
+            into.Add(line.WithSource(source));
         }
+    }
 
-        foreach (string line in instant)
-        {
-            layout.Add(Block.Effects, line);
-        }
+    /// <summary>
+    /// Sorts the collected lines and writes them into the Effects section.
+    ///
+    /// Every ordering decision the overlay makes lives in <see cref="EffectOrder"/>; this
+    /// only carries the result across. What used to be here was three lists drained in
+    /// sequence, where the position of a line inside each was whatever order its component
+    /// happened to sit on the prefab.
+    /// </summary>
+    private static void EmitEffects(DescriptionLayout layout, List<EffectLine> effects)
+    {
+        EffectOrder.Sort(effects);
 
-        foreach (string line in timed)
+        foreach (EffectLine line in effects)
         {
-            layout.Add(Block.Effects, line);
+            layout.Add(Block.Effects, line.Text);
         }
     }
 
@@ -478,90 +513,267 @@ internal static class ItemDescriptionBuilder
     /// A lit lantern warms whoever is near it. Stated per second rather than as a total over
     /// the fuel, so the figure means the same thing on a full lantern and a nearly-spent one.
     /// </summary>
-    private static string DescribeLantern(GameObject itemGameObj)
+    private static List<EffectLine> DescribeLantern(GameObject itemGameObj)
     {
+        List<EffectLine> lines = new();
+
         string path = itemGameObj.name.Equals("Lantern_Faerie(Clone)")
             ? "FaerieLantern/Light/Heat"
             : itemGameObj.name.Equals("Lantern(Clone)") ? "GasLantern/Light/Heat" : null!;
 
         if (path == null)
         {
-            return "";
+            return lines;
         }
 
         Transform? heat = itemGameObj.transform.Find(path);
         StatusField? effect = heat != null ? heat.GetComponent<StatusField>() : null;
         if (effect == null)
         {
-            return "";
+            return lines;
+        }
+
+        // Every status in the field moves at the *main* rate. StatusFieldStatus carries a
+        // statusAmountPerSecond of its own and the game never reads it -
+        // StatusFieldBase.IncreaseStatus passes the same amt to every additional status:
+        //
+        //   AdjustStatus(statusType, amt);
+        //   foreach (var additional in additionalStatuses)
+        //       AdjustStatus(additional.statusType, amt);
+        //
+        // So a per-status figure was reporting an inspector field with no effect on play.
+        // (tickBased changes nothing either: it applies statusAmountPerSecond * timeBetweenTicks
+        // once per tick, which is the same rate.)
+        Dictionary<CharacterAfflictions.STATUSTYPE, float> rates = new();
+        Accumulate(rates, effect.statusType, effect.statusAmountPerSecond);
+        foreach (StatusField.StatusFieldStatus status in effect.additionalStatuses)
+        {
+            Accumulate(rates, status.statusType, effect.statusAmountPerSecond);
+        }
+
+        // IncreaseStatus goes through AdjustStatus, which sends anything negative to
+        // SubtractStatus - so a lantern that cures poison cures spores at the same rate, for
+        // free and without a component saying so. Same coupling the Action_ModifyStatus
+        // branch honours; the Faerie Lantern was the case where it was being missed.
+        if (rates.TryGetValue(CharacterAfflictions.STATUSTYPE.Poison, out float poison)
+            && CuresSporesToo(CharacterAfflictions.STATUSTYPE.Poison, poison))
+        {
+            Accumulate(rates, CharacterAfflictions.STATUSTYPE.Spores, poison);
         }
 
         // One line per status. Grouping by shared rate was tried and dropped for consistency
         // with every other effect in the overlay - the Faerie Lantern is taller for it, but a
         // reader no longer has to learn a second way of reading a line.
-        List<string> lines = new()
+        foreach (KeyValuePair<CharacterAfflictions.STATUSTYPE, float> rate in rates)
         {
-            EffectFormatter.PerSecond(effect.statusAmountPerSecond, effect.statusType.ToString()),
-        };
-
-        foreach (StatusField.StatusFieldStatus status in effect.additionalStatuses)
-        {
-            lines.Add(EffectFormatter.PerSecond(status.statusAmountPerSecond, status.statusType.ToString()));
+            AddPerSecond(lines, rate.Value, rate.Key);
         }
 
-        lines.RemoveAll(string.IsNullOrEmpty);
-        return string.Join("\n", lines);
+        return lines;
     }
 
-    private static void Collect(Dictionary<float, List<string>> byRate, float rate, string status)
+    /// <summary>
+    /// True when taking this status down also takes Spores down by the same amount.
+    /// CharacterAfflictions.SubtractStatus does it for every deliberate poison cure:
+    ///
+    ///   if (statusType == Poison &amp;&amp; !decreasedNaturally &amp;&amp; character.IsLocal)
+    ///       SubtractStatus(Spores, amount);
+    ///
+    /// One-way, and not applied to the passive decay. Stated once here because three
+    /// different shapes of line need it and each was working it out for itself.
+    /// </summary>
+    private static bool CuresSporesToo(CharacterAfflictions.STATUSTYPE statusType, float amount) =>
+        statusType == CharacterAfflictions.STATUSTYPE.Poison && amount < 0f;
+
+    /// <summary>
+    /// Adds to a status's running total rather than replacing it, because the game applies
+    /// each entry separately - a field naming the same status twice moves it twice as fast.
+    /// </summary>
+    private static void Accumulate(Dictionary<CharacterAfflictions.STATUSTYPE, float> rates,
+        CharacterAfflictions.STATUSTYPE statusType, float amount)
     {
-        if (rate == 0f)
-        {
-            return;
-        }
+        rates[statusType] = rates.TryGetValue(statusType, out float running) ? running + amount : amount;
+    }
 
-        if (!byRate.TryGetValue(rate, out List<string>? statuses))
+    /// <summary>One warmed-or-chilled status from a lantern's field, if it moves at all.</summary>
+    private static void AddPerSecond(List<EffectLine> lines, float perSecond,
+        CharacterAfflictions.STATUSTYPE statusType)
+    {
+        string status = statusType.ToString();
+        string text = EffectFormatter.PerSecond(perSecond, status);
+        if (text.Length > 0)
         {
-            statuses = new List<string>();
-            byRate[rate] = statuses;
+            lines.Add(new EffectLine(text, Onset.OverTime, status, perSecond));
         }
-
-        statuses.Add(status);
     }
 
     /// <summary>
     /// Remedy Fungus. There is no eat-it effect at all - the only way to use it is to throw
     /// it, and the explosion is what heals - so every figure here is the thrown one.
+    ///
+    /// Every AOE in the prefab it breaks into, found by walking for the component rather than
+    /// by name. The old walk reached through four hardcoded child names and threw when one of
+    /// them went missing, which is exactly what happened: in 2.1.a the spawn holds a single
+    /// healing AOE and the poison child the code went looking for is gone.
     /// </summary>
-    private static string DescribeHealingShroom(ShelfShroom effect)
+    private static List<EffectLine> DescribeHealingShroom(ShelfShroom effect)
     {
-        if (!effect.instantiateOnBreak.name.Equals("HealingPuffShroomSpawn"))
+        List<EffectLine> lines = new();
+        if (effect.instantiateOnBreak == null)
         {
-            return "";
+            return lines;
         }
 
-        GameObject healing = effect.instantiateOnBreak.transform.Find("VFX_SporeHealingExplo").gameObject;
-        AOE healingAOE = healing.GetComponent<AOE>();
-        GameObject poison = healing.transform.Find("VFX_SporePoisonExplo").gameObject;
-        AOE[] poisonAOEs = poison.GetComponents<AOE>();
-        TimeEvent timeEvent = poison.GetComponent<TimeEvent>();
-        RemoveAfterSeconds duration = poison.GetComponent<RemoveAfterSeconds>();
-
-        // Values below were adjusted by hand - they calculate strangely, and may still be
-        // wrong. See BACKLOG 7.
-        List<string> lines = new()
+        foreach (AOE aoe in effect.instantiateOnBreak.GetComponentsInChildren<AOE>(true))
         {
-            EffectFormatter.Effect(Mathf.Round(healingAOE.statusAmount * 0.9f * 40f) / 40f,
-                healingAOE.statusType.ToString()),
-        };
+            // A repeating TimeEvent on the same object turns a one-off burst into a field you
+            // stand in. Remedy Fungus is both: one blast that heals as it goes off, and two
+            // AOEs re-firing every half second for as long as the spawn lives.
+            TimeEvent? repeat = aoe.GetComponent<TimeEvent>();
+            bool ticking = repeat != null && repeat.repeating && repeat.rate > 0f;
+            float seconds = ticking ? Lifetime(aoe.transform) : 0f;
 
-        foreach (AOE poisonAOE in poisonAOEs)
-        {
-            lines.Add(EffectFormatter.EffectOverTime(
-                Mathf.Round(poisonAOE.statusAmount * (1f / timeEvent.rate) * 40f) / 40f,
-                1f, duration.seconds, poisonAOE.statusType.ToString()));
+            AddBlast(lines, aoe, aoe.statusType, aoe.statusAmount, repeat, seconds);
+
+            for (int j = 0; aoe.addtlStatus != null && j < aoe.addtlStatus.Length; j++)
+            {
+                // Each additional status uses its own override where one is given, and the
+                // main amount otherwise - the same fallback Explode does.
+                float amount = aoe.addlStatusAmountOverrides != null
+                    && j < aoe.addlStatusAmountOverrides.Count
+                        ? aoe.addlStatusAmountOverrides[j]
+                        : aoe.statusAmount;
+                AddBlast(lines, aoe, aoe.addtlStatus[j], amount, repeat, seconds);
+            }
         }
 
-        return string.Join("", lines);
+        return lines;
     }
+
+    /// <summary>
+    /// How long a spawned effect lasts, from the nearest RemoveAfterSeconds at or above it.
+    /// Zero where nothing sets a lifetime, which reads as "no duration to state".
+    ///
+    /// **includeInactive matters here.** Everything walked in this file is a prefab asset,
+    /// never a live object, so nothing in it is active in any hierarchy - and the no-argument
+    /// GetComponentInParent skips inactive objects and returns null every time. That silently
+    /// made every repeating blast durationless, which OverTime renders as no line at all:
+    /// Remedy Fungus showed its instant heal and nothing else.
+    /// </summary>
+    private static float Lifetime(Transform spawned)
+    {
+        RemoveAfterSeconds? removeAfter = spawned.GetComponentInParent<RemoveAfterSeconds>(true);
+        return removeAfter != null ? removeAfter.seconds : 0f;
+    }
+
+    /// <summary>
+    /// One status an explosion moves - as a single hit, or as a rate where the blast repeats -
+    /// plus the spores that come free with a poison cure. AOE.Explode applies its amounts
+    /// through AdjustStatus, so that coupling reaches here exactly as it reaches a lantern.
+    /// </summary>
+    private static void AddBlast(List<EffectLine> lines, AOE aoe,
+        CharacterAfflictions.STATUSTYPE statusType, float amount, TimeEvent? repeat, float seconds)
+    {
+        string status = statusType.ToString();
+
+        if (repeat == null || !repeat.repeating || repeat.rate <= 0f)
+        {
+            Collect(lines, 0, EffectFormatter.Effect(Standing(aoe, amount), status),
+                Onset.Instant, status, amount);
+        }
+        else
+        {
+            float total = TickedTotal(amount, repeat.rate, seconds);
+            Collect(lines, 0, EffectFormatter.OverTime(total, seconds, status),
+                Onset.OverTime, status, total);
+        }
+
+        if (CuresSporesToo(statusType, amount))
+        {
+            AddBlast(lines, aoe, CharacterAfflictions.STATUSTYPE.Spores, amount, repeat, seconds);
+        }
+    }
+
+    /// <summary>
+    /// The smallest change the status bars can actually record. CharacterAfflictions holds a
+    /// running total per status and only spends it in whole units of this.
+    /// </summary>
+    private const float StatusStep = 0.025f;
+
+    /// <summary>
+    /// What a repeating blast is worth over its whole life - which is neither its amount
+    /// divided by its period nor that multiplied by its duration, because a status does not
+    /// move by whatever it is handed and the last payout never lands.
+    ///
+    /// SubtractStatus banks each amount and pays out only in whole 0.025 steps, **throwing
+    /// the remainder away** each time it pays:
+    ///
+    ///   currentDecrementalStatuses[t] += amount;
+    ///   if (acc >= 0.025) { currentStatuses[t] -= floor(acc / 0.025) * 0.025; acc = 0; }
+    ///
+    /// Remedy Fungus hands over 0.015 every half second. That is under the step, so nothing
+    /// lands on the first tick and 0.025 comes off on the second - one step per second, 2.5
+    /// display units, against a raw figure of 3. Dividing would overstate it by a fifth, and
+    /// the discarded remainder is why.
+    ///
+    /// Then the payouts are counted rather than multiplied out. They land at one step, two
+    /// steps, and so on, while RemoveAfterSeconds destroys the spawn at the duration itself -
+    /// so a payout falling exactly on that boundary never happens. A 15-second fungus field
+    /// pays 14 times, which is what in-game testing found: it heals as though it ran for 14
+    /// seconds.
+    ///
+    /// This also makes the blast's distance factor irrelevant here: anything between 0.0125
+    /// and 0.025 a tick lands on the same one step per second, so the empirical 0.9 in
+    /// <see cref="Standing"/> is not needed for the ticking half and is not applied to it.
+    /// </summary>
+    private static float TickedTotal(float amount, float period, float seconds)
+    {
+        float perTick = Mathf.Abs(amount);
+        if (perTick == 0f || period <= 0f || seconds <= 0f)
+        {
+            return 0f;
+        }
+
+        float payout;
+        float every;
+        if (perTick >= StatusStep)
+        {
+            // Big enough to pay out every tick, still losing whatever does not fill a step.
+            payout = Mathf.Floor(perTick / StatusStep) * StatusStep;
+            every = period;
+        }
+        else
+        {
+            // Too small to pay out alone, so it takes several ticks to reach one step.
+            payout = StatusStep;
+            every = Mathf.Ceil(StatusStep / perTick) * period;
+        }
+
+        float payouts = Mathf.Max(0f, Mathf.Ceil(seconds / every) - 1f);
+        float total = payouts * payout;
+        return amount < 0f ? -total : total;
+    }
+
+    /// <summary>
+    /// What an explosion actually gives the person who set it off, rather than what its
+    /// statusAmount says.
+    ///
+    /// AOE.Explode scales every amount by <c>GetFactor(dist) = (1 - dist/range)^factorPow</c>,
+    /// and <c>dist</c> is measured to <c>character.Center</c> - your chest, not your feet. So
+    /// the factor never reaches 1 no matter where you stand, and the full figure is a number
+    /// nobody can ever be given. Standing on the blast leaves roughly a tenth of the range
+    /// between you and it.
+    ///
+    /// The rounding is the game's own: <c>CharacterAfflictions.RoundStatus</c> snaps statuses
+    /// to multiples of 1/40, which is 2.5 display units.
+    ///
+    /// This is jkqt's original formula, restored. It was removed as an unexplained haircut
+    /// and put back when in-game testing confirmed the figure it produces - Remedy Fungus
+    /// heals 17.5, not the 20 its AOE advertises. **The 0.9 is empirical**: it is a stand-in
+    /// for a geometry the overlay cannot measure, and it is the one number in this file that
+    /// no field in the game backs up.
+    /// </summary>
+    private static float Standing(AOE aoe, float amount) =>
+        aoe.ignoreFactor ? amount : Mathf.Round(amount * 0.9f * 40f) / 40f;
+
 }
