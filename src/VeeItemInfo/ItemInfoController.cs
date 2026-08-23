@@ -77,11 +77,18 @@ internal static class ItemInfoController
 
     private static void Refresh(Item item)
     {
+        // The item dump comes first. It is the tool for working out why an item shows
+        // nothing, and an item that makes Build throw is exactly that case - logging it
+        // afterwards meant the one item you most needed to see never got dumped at all.
+        if (PluginConfig.DebugLogging.Value)
+        {
+            ItemDebug.LogItem(item);
+        }
+
         Overlay.SetText(ItemDescriptionBuilder.Build(item));
 
         if (PluginConfig.DebugLogging.Value)
         {
-            ItemDebug.LogItem(item);
             Overlay.LogDiagnostics();
             StatusIcons.LogDiagnostics();
         }
