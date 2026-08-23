@@ -41,11 +41,13 @@ ICON = {
 
  # Already coloured on the wiki, so never tinted.
  "Numb": "Status_Numb",
- # The wiki has no campfire status icon. The stove stands in here; the mod itself scrapes
- # the real campfire off StaminaBar at runtime.
- "Cook": "Portable_Stove",
  "Dynamite": "Dynamite", "Honeycomb": "Honeycomb", "HalfCoconut": "Half-Coconut",
 }
+
+# The wiki has no campfire status icon, and the stove that stood in for it read as an item
+# rather than as "fire". An emoji is clearer and costs no request. Only the doc is affected:
+# the mod scrapes the real campfire off StaminaBar at runtime.
+EMOJI = {"Cook": "🔥"}
 
 # Icons whose own art is coloured. Everything else is a silhouette and gets tinted.
 FULL_COLOUR = {"Numb", "Cook", "Dynamite", "Honeycomb", "HalfCoconut"}
@@ -68,6 +70,9 @@ def wiki_icon(file_name):
 
 def ic(s):
     """Inline status icon, or a text fallback where the game has no icon at all."""
+    if s in EMOJI:
+        return '<span class="emoji" title="%s">%s</span>' % (s, EMOJI[s])
+
     f = ICON.get(s)
     if not f:
         return '<b class="fallback">%s</b>' % s.upper()

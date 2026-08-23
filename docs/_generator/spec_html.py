@@ -38,6 +38,7 @@ col.c-icon{width:60px} col.c-name{width:11%} col.c-gt{width:20%}
 col.c-v0{width:22%} col.c-v1{width:22%} col.c-gap{width:21%}
 img.item{width:52px;height:52px;image-rendering:auto}
 img.si{height:1.05em;width:auto;vertical-align:-.18em;margin:0 .05em}
+.emoji{font-size:1.05em;line-height:1}
 .si.tint{display:inline-block;height:1.05em;width:1.05em;vertical-align:-.18em;margin:0 .05em;
   -webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
   -webkit-mask-position:center;mask-position:center}
@@ -116,7 +117,7 @@ for cid, title, desc in CATS:
     A("<table class=items><colgroup><col class=c-icon><col class=c-name><col class=c-gt>"
       "<col class=c-v0><col class=c-v1><col class=c-gap></colgroup>")
     A("<tr><th></th><th>Item</th><th>Ground truth (wiki)</th>"
-      "<th>jkqt&rsquo;s version</th><th class=h1>v1 &mdash; target</th>"
+      "<th>v0 from jkqt&rsquo;s source</th><th class=h1>v1 &mdash; target</th>"
       "<th>Notes &amp; open questions</th></tr>")
     for it, b, g, b1, n1 in rows[cid]:
         base = it["icon"].replace("64px-", "").replace("_l1b6.webp", "")
