@@ -65,6 +65,98 @@ internal static class ItemDebug
         Plugin.Log.LogInfo(report.ToString());
     }
 
+    private static string lastAudited = "";
+
+    /// <summary>
+    /// Reports anything in a finished description that would render in the overlay's base
+    /// colour rather than a chosen one.
+    ///
+    /// The rule this enforces is that **every visible thing sits inside a colour tag**. It
+    /// used not to be checkable by eye: a missed tag rendered pure white, which reads as
+    /// "bright" rather than "wrong", and on a `tint=1` sprite it looked like a slightly
+    /// crisper icon. Two lines had been leaking for as long as they had existed - the item
+    /// duplication arrow and the low-gravity balloon.
+    ///
+    /// Reads the string that is actually handed to TextMeshPro, so it cannot be fooled by
+    /// how the line was assembled, and it catches leaks nobody thought to look for.
+    /// Whitespace between tags is fine and expected; it is invisible in any colour.
+    /// </summary>
+    internal static void LogUntagged(string description)
+    {
+        if (description == lastAudited)
+        {
+            return;
+        }
+
+        lastAudited = description;
+
+        List<string> leaks = new();
+        int depth = 0;
+        int i = 0;
+
+        while (i < description.Length)
+        {
+            if (description[i] == '<')
+            {
+                int close = description.IndexOf('>', i);
+                if (close < 0)
+                {
+                    leaks.Add("unterminated tag");
+                    break;
+                }
+
+                string tag = description.Substring(i + 1, close - i - 1);
+                if (tag.StartsWith("#") || tag.StartsWith("color="))
+                {
+                    depth++;
+                }
+                else if (tag == "/color")
+                {
+                    if (depth > 0)
+                    {
+                        depth--;
+                    }
+                    else
+                    {
+                        leaks.Add("</color> closing nothing");
+                    }
+                }
+                else if (tag.StartsWith("sprite") && depth == 0)
+                {
+                    leaks.Add("<" + tag + ">");
+                }
+
+                i = close + 1;
+                continue;
+            }
+
+            if (depth == 0 && !char.IsWhiteSpace(description[i]))
+            {
+                int start = i;
+                while (i < description.Length && description[i] != '<')
+                {
+                    i++;
+                }
+
+                leaks.Add("\"" + description.Substring(start, i - start).Trim() + "\"");
+                continue;
+            }
+
+            i++;
+        }
+
+        if (depth != 0)
+        {
+            leaks.Add($"{depth} colour tag(s) left open");
+        }
+
+        if (leaks.Count > 0)
+        {
+            Plugin.Log.LogWarning("[color] untagged, renders in the base colour: "
+                + string.Join(", ", leaks));
+        }
+    }
+
     /// <summary>The fields worth seeing, for the components that drive the description.</summary>
     private static string Values(Component component) => component switch
     {

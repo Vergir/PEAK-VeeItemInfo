@@ -407,7 +407,7 @@ internal static class EffectFormatter
             Affliction_MassSuperJump effect = (Affliction_MassSuperJump)affliction;
             lines.Add(new EffectLine(
                 EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
-                + StatusIcons.Tag("Float")
+                + EffectColors.Get("Float") + StatusIcons.Tag("Float") + "</color>"
                 + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>",
                 Onset.OverTime, "Float", 1f));
         }

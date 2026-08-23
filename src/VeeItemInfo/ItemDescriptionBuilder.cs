@@ -376,9 +376,14 @@ internal static class ItemDescriptionBuilder
             else if (itemComponents[i].GetType() == typeof(Peak.Action_CloneSelectedItem))
             {
                 Peak.Action_CloneSelectedItem effect = (Peak.Action_CloneSelectedItem)itemComponents[i];
-                string generic = StatusIcons.Tag("Item");
+                // Every part of this line was untagged, so all four glyphs rendered in
+                // TMP's default. The arrow is neutral like every other arrow; the item
+                // glyphs take the cream, which is what a figure belonging to no status wears.
+                string generic = EffectColors.White + StatusIcons.Tag("Item") + "</color>";
 
-                layout.Add(Block.Custom, generic + EffectFormatter.Arrow + generic + generic);
+                layout.Add(Block.Custom, generic
+                    + EffectColors.Neutral + EffectFormatter.Arrow + "</color>"
+                    + generic + generic);
                 // AddPetrify takes whole points on the 0-100 scale, unlike almost everything
                 // else here, so these are already display units. The two values are discrete
                 // - plain items versus mystical ones - so a slash, not a range.

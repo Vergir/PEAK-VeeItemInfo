@@ -85,10 +85,12 @@ internal static class ItemInfoController
             ItemDebug.LogItem(item);
         }
 
-        Overlay.SetText(ItemDescriptionBuilder.Build(item));
+        string description = ItemDescriptionBuilder.Build(item);
+        Overlay.SetText(description);
 
         if (PluginConfig.DebugLogging.Value)
         {
+            ItemDebug.LogUntagged(description);
             Overlay.LogDiagnostics();
             StatusIcons.LogDiagnostics();
         }

@@ -111,6 +111,8 @@ internal static class Overlay
         rect.anchorMax = Vector2.zero;
         rect.pivot = new Vector2(0.5f, 0f);
 
+        // Never leave this at TMP's default of pure white - see EffectColors.Base.
+        textMesh.color = EffectColors.Base;
         textMesh.fontSize = PluginConfig.FontSize.Value;
         textMesh.lineSpacing = PluginConfig.LineSpacing.Value;
         textMesh.outlineWidth = PluginConfig.OutlineWidth.Value;

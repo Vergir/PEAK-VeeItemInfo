@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace VeeItemInfo;
 
@@ -11,6 +12,21 @@ internal static class EffectColors
 {
     /// <summary>Used for plain descriptive text, and as the fallback for unknown statuses.</summary>
     internal const string Neutral = "<#CCCCCC>";
+
+    /// <summary>
+    /// What a run with no colour tag around it renders in.
+    ///
+    /// TextMeshPro defaults to pure white, so every tag the overlay forgot showed up as
+    /// `#FFFFFF` - brighter than anything the palette contains, and brighter still on a
+    /// `tint=1` sprite, which multiplies by it. Setting the component's own colour makes a
+    /// missed tag degrade to the cream instead of shouting.
+    ///
+    /// This is a safety net and not a licence: an untagged run is still a bug, and
+    /// <see cref="ItemDebug.LogUntagged"/> reports every one of them with debug logging on.
+    /// Matching <see cref="White"/> is deliberate - a leak now looks like the thing it should
+    /// most likely have been.
+    /// </summary>
+    internal static readonly Color Base = new Color32(0xF2, 0xEC, 0xDE, 0xFF);
 
     /// <summary>
     /// For a value that applies to several statuses at once and so belongs to none. Matches
