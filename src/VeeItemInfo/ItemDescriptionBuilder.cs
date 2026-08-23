@@ -261,6 +261,30 @@ internal static class ItemDescriptionBuilder
                 Collect(timed, EffectFormatter.Colored("50-105", "Poison")
                     + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>");
             }
+            // 'is' rather than an exact match: CactusBall derives from StickyItemComponent
+            // and is the only item carrying one in 2.1.a, so an exact check would read the
+            // base class and describe nothing at all. Same trap that lost
+            // Action_SuperJumpAmulet's affliction.
+            else if (itemComponents[i] is StickyItemComponent sticky)
+            {
+                // Cactus. addThornsToStuckPlayer is charged to whoever the cactus is stuck
+                // to - and CharacterData.currentItem's setter makes the item in your hand
+                // your currentStickyItem, so UpdateWeight charges you for it while you are
+                // merely holding it, not only after someone throws it at you. The number is
+                // the same on both readings, so one line says both.
+                //
+                // Thorn *increments*, not thorns: UpdateWeight does
+                // SetStatus(Thorns, 0.025 * increments) and this field is added straight to
+                // that count, unlike Action_AddOrRemoveThorns where one thorn is worth two
+                // increments. Custom rather than Effects for the same reason as the idol
+                // below - a cactus has no use-action for the line to be mistaken for.
+                //
+                // addWeightToStuckPlayer rides the same path and is deliberately unread: it
+                // would print a second Weight figure that the Weight section does not know
+                // about, and no item in 2.1.a is known to set it.
+                layout.Add(Block.Custom,
+                    EffectFormatter.Effect(sticky.addThornsToStuckPlayer * 0.025f, "Thorns"));
+            }
             else if (itemComponents[i].GetType() == typeof(BingBongShieldWhileHolding))
             {
                 // Ancient Idol - the one item in 2.1.a that does its work while merely held

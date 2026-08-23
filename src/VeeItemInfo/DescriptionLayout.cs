@@ -15,9 +15,14 @@ namespace VeeItemInfo;
 internal enum Block
 {
     /// <summary>
-    /// Item-specific facts that are not status changes: how far a rope reaches, how many
-    /// pieces something breaks into, how long an effect lasts, or a bare "???" where the
-    /// item does something we deliberately do not spell out.
+    /// Item-specific facts that are not the result of using the item: how far a rope
+    /// reaches, how many pieces something breaks into, how long an effect lasts, or a bare
+    /// "???" where the item does something we deliberately do not spell out.
+    ///
+    /// Also what an item costs or grants while merely held - the Ancient Idol's shield, the
+    /// Cactus's thorns. Those are status changes, but they belong here rather than in
+    /// Effects: Effects answers "what happens when you use this", and neither item is ever
+    /// used.
     /// </summary>
     Custom,
 
