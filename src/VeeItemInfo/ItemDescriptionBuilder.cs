@@ -261,6 +261,25 @@ internal static class ItemDescriptionBuilder
                 Collect(timed, EffectFormatter.Colored("50-105", "Poison")
                     + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>");
             }
+            else if (itemComponents[i].GetType() == typeof(BingBongShieldWhileHolding))
+            {
+                // Ancient Idol - the one item in 2.1.a that does its work while merely held
+                // rather than when used. The component re-applies a two-second
+                // Affliction_BingBongShield every 1.5 seconds for as long as the idol is your
+                // current item, so neither number means anything on its own: the shield never
+                // lapses, and infinity is the honest amount of it.
+                //
+                // Coloured like any other figure with an icon beside it, which is what Big
+                // Lollipop already does with the same mark. Neutral is for a duration standing
+                // next to a figure, as on the healing amulet below; here the mark is the figure.
+                //
+                // Custom rather than Effects, even though the amulet's shield is an effect.
+                // Effects answers "what happens when you use this", and the idol is never used;
+                // filing it there would promise a shield on some action that does not exist.
+                // Nothing marks it as a held effect - the idol has no use-action to confuse it
+                // with.
+                layout.Add(Block.Custom, EffectFormatter.Colored(EffectFormatter.Infinity, "Shield"));
+            }
             else if (itemComponents[i].GetType() == typeof(Peak.Action_HealingGem))
             {
                 Peak.Action_HealingGem effect = (Peak.Action_HealingGem)itemComponents[i];
