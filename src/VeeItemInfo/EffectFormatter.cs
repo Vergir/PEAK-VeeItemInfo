@@ -321,10 +321,22 @@ internal static class EffectFormatter
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ColdOverTime)
         {
-            Affliction_AdjustColdOverTime effect = (Affliction_AdjustColdOverTime)affliction; // 1.6.a
-            result += (effect.statusPerSecond > 0 ? EffectColors.Negative + "GAIN</color> " : EffectColors.Positive + "REMOVE</color> ")
-                + EffectColors.Get("Cold") + Scaled(Mathf.Abs(effect.statusPerSecond) * effect.totalTime)
-                + " COLD</color> OVER " + Num(effect.totalTime) + "s\n";
+            // Heat Pack, and the last prose in the mod - it used to read
+            // "GAIN/REMOVE {n} COLD OVER {n}s". The sign says which way the status moves,
+            // the icon says what moves, and the arrow says how long it keeps moving.
+            //
+            // A rate and a duration rather than a total, unlike the drowsy branch above.
+            // UpdateEffect applies statusPerSecond * deltaTime every frame against a scale
+            // that stops at 100, so a Heat Pack's rate across its full time multiplies out
+            // to many times that maximum - a total here is arithmetic nobody can feel. The
+            // rate is what you get; the duration is how long you keep getting it.
+            Affliction_AdjustColdOverTime effect = (Affliction_AdjustColdOverTime)affliction;
+            string rate = PerSecond(effect.statusPerSecond, "Cold");
+            if (rate.Length > 0)
+            {
+                result += rate + EffectColors.Neutral + Arrow
+                    + Seconds(effect.totalTime) + "</color>\n";
+            }
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Chaos)
         {
