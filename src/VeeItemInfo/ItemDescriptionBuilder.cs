@@ -153,6 +153,31 @@ internal static class ItemDescriptionBuilder
                 // section above everything the item gives everyone else.
                 layout.Add(Block.Custom, EffectColors.Negative + "???</color>");
             }
+            else if (itemComponents[i].GetType() == typeof(Peak.RitualDaggerFeedBehavior))
+            {
+                // The other half of the Ritual Dagger, and the reason the wiki lists effects
+                // the item does not carry: RPC_RitualDaggerBuff runs on every client and
+                // skips only the character who was fed the dagger, so everybody else in the
+                // lobby - the feeder included - is healed and handed stamina.
+                //
+                // This is not reachable as an ItemAction. IExtraFeedBehavior is its own
+                // hook, called when one player feeds an item to another, and
+                // RitualDaggerFeedBehavior is the only thing in 2.1.a that implements it.
+                Peak.RitualDaggerFeedBehavior effect = (Peak.RitualDaggerFeedBehavior)itemComponents[i];
+
+                // ClearAllStatus() with no arguments, so curse and petrify are spared.
+                Collect(effects, i, EffectFormatter.ClearedStatuses(true, null));
+
+                // AddExtraStamina takes the same 0-1 fraction as a status.
+                Collect(effects, i, EffectFormatter.Effect(effect.bonusStamina, "Extra Stamina"),
+                    Onset.Instant, "Extra Stamina", effect.bonusStamina);
+
+                if (effect.infiniteStaminaTime > 0f)
+                {
+                    Collect(effects, i, EffectFormatter.InfiniteStamina(effect.infiniteStaminaTime),
+                        Onset.OverTime, "Extra Stamina", 1f);
+                }
+            }
             else if (itemComponents[i].GetType() == typeof(Action_RandomMushroomEffect))
             {
                 // No status of its own - four question marks standing in for whatever the
@@ -392,6 +417,14 @@ internal static class ItemDescriptionBuilder
             //                         there is no symbol for the real behaviour yet.
             //   CactusBall          - the throw-charge threshold has no agreed symbol; the
             //                         thorns it inflicts still come through Action_AddOrRemoveThorns.
+            //   Action_SacrificeFriend - it kills whoever the dagger is *fed to*, never the
+            //                         holder. The dagger carries no Action_Consume, so there
+            //                         is no way to use it on yourself; the only path to
+            //                         RunAction is RitualDaggerFeedBehavior calling
+            //                         ConsumeDelayed once the item has changed hands. The
+            //                         "???" mark means "the worst thing happens to you", so
+            //                         it said the wrong thing here. There is no symbol yet
+            //                         for a death that lands on someone else.
         }
 
         EmitEffects(layout, effects);

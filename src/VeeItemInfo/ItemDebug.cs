@@ -80,6 +80,8 @@ internal static class ItemDebug
         StickyItemComponent a => $" thorns={a.addThornsToStuckPlayer} weight={a.addWeightToStuckPlayer}"
             + $" throwCharge={a.throwChargeRequirement}",
         ShelfShroom a => BreaksInto(a),
+        Peak.RitualDaggerFeedBehavior a => $" bonusStamina={a.bonusStamina}"
+            + $" infiniteStaminaTime={a.infiniteStaminaTime}",
         ItemCooking c => $" canBeCooked={c.canBeCooked} wreck={c.wreckWhenCooked} preCooked={c.preCooked}"
             + $" behaviours={c.additionalCookingBehaviors.Length} explosionPrefab={(c.explosionPrefab == null ? "<none>" : c.explosionPrefab.name)}",
         _ => "",
