@@ -180,6 +180,33 @@ internal static class ItemDebug
     };
 
     /// <summary>
+    /// What this run dealt the berry in hand, and the whole table behind it.
+    ///
+    /// A Shroomberry's effect and its stamina are both decided once at level generation and
+    /// held in MushroomManager, not rolled when you eat one. Printing the slot this berry
+    /// reads plus the full table is what makes a claim like "no stamina arrives" checkable:
+    /// a berry dealt 0 and a berry that is broken look identical from the bar alone.
+    /// </summary>
+    private static string Rolls(Action_RandomMushroomEffect effect)
+    {
+        MushroomManager? manager = MushroomManager.instance;
+        if (manager == null || manager.mushroomEffects == null || manager.mushroomEffects.Length == 0)
+        {
+            return " <no MushroomManager>";
+        }
+
+        int index = effect.mushroomTypeIndex % manager.mushroomEffects.Length;
+        string stam = manager.mushroomStamAmt != null && index < manager.mushroomStamAmt.Length
+            ? (manager.mushroomStamAmt[index] * 5).ToString()
+            : "?";
+
+        return $" slot={index} effect={manager.mushroomEffects[index]} stamina={stam}"
+            + $" minGood={manager.minGoodEffects} minBad={manager.minBadEffects}"
+            + $" effects=[{string.Join(", ", manager.mushroomEffects)}]"
+            + $" stamAmts=[{string.Join(", ", manager.mushroomStamAmt ?? new int[0])}]";
+    }
+
+    /// <summary>
     /// The subtree a breakable item turns into, with the numbers on it.
     ///
     /// A component list alone cannot explain a Remedy Fungus, because everything it does

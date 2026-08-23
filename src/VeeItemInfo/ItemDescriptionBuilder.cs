@@ -180,11 +180,7 @@ internal static class ItemDescriptionBuilder
             }
             else if (itemComponents[i].GetType() == typeof(Action_RandomMushroomEffect))
             {
-                // No status of its own - four question marks standing in for whatever the
-                // berry rolls - so it trails the instant lines rather than claiming a place
-                // among them.
-                Collect(effects, i, DescribeMushroom((Action_RandomMushroomEffect)itemComponents[i]),
-                    Onset.Instant);
+                Collect(effects, i, DescribeMushroom((Action_RandomMushroomEffect)itemComponents[i]));
             }
             else if (itemComponents[i].GetType() == typeof(Action_ClearAllStatus))
             {
@@ -487,8 +483,8 @@ internal static class ItemDescriptionBuilder
     }
 
     /// <summary>
-    /// A Shroomberry. Four question marks for "something happens", coloured by whether this
-    /// run rolled a good effect or a bad one for this berry.
+    /// A Shroomberry: what this berry is worth in stamina, and four question marks for the
+    /// effect, coloured by whether this run rolled a good one or a bad one for it.
     ///
     /// A berry colour's valence <i>is</i> stable across runs, even though the effects
     /// themselves are shuffled every time. GenerateEffectList deals the slots in order and
@@ -503,44 +499,74 @@ internal static class ItemDescriptionBuilder
     /// working if the quotas ever change. Falls back to neutral when MushroomManager is not
     /// up yet, which is honest: unknown rather than guessed.
     /// </summary>
-    private static string DescribeMushroom(Action_RandomMushroomEffect effect)
+    /// <summary>
+    /// The most stamina a Shroomberry can carry, as a 0-1 fraction: 15 display units.
+    ///
+    /// **Hardcoded, and it cannot be otherwise.** MushroomManager.GenerateEffectList deals
+    /// each slot a <c>Random.Range(0, 4)</c> and RunAction multiplies by <c>0.05f</c>; both
+    /// are literals in the game's own code with nothing exposing them at runtime. Only the
+    /// dealt values survive, in <c>mushroomStamAmt</c>, and the highest of those in any one
+    /// run is a sample rather than the bound.
+    ///
+    /// **0-15, not 0-20.** The wiki says 20, which is what reading <c>Range(0, 4)</c> as
+    /// inclusive gives you. Unity's integer overload is max-exclusive, so the draws are 0, 1,
+    /// 2 and 3. Verified in the IL rather than the decompiler's C#:
+    /// <c>ldc.i4.0; ldc.i4.4; call int32 UnityEngine.Random::Range(int32, int32)</c>.
+    /// A 4 appearing in the <c>stamAmts</c> table the item dump prints would disprove it.
+    /// </summary>
+    private const float MaxMushroomStamina = 0.15f;
+
+    private static List<EffectLine> DescribeMushroom(Action_RandomMushroomEffect effect)
     {
         const string Marks = "????";
 
+        List<EffectLine> lines = new();
         MushroomManager? manager = MushroomManager.instance;
         if (manager == null || manager.mushroomEffects == null || manager.mushroomEffects.Length == 0)
         {
-            return EffectColors.White + Marks + "</color>";
+            lines.Add(new EffectLine(EffectColors.White + Marks + "</color>", Onset.Instant));
+            return lines;
         }
 
         int index = effect.mushroomTypeIndex % manager.mushroomEffects.Length;
+
+        // The span, not this berry's draw. mushroomStamAmt[index] is dealt once at level
+        // generation and would tell us exactly what this berry carries - and not printing it
+        // is the point. A Shroomberry is a gamble, and the overlay gives away no more of it
+        // than the four question marks below already do.
+        //
+        // Confirmed in game: the stamina does arrive. It was hidden on a report that it did
+        // not, which a roll of 0 - a quarter of berries - looks exactly like.
+        lines.Add(new EffectLine(
+            EffectFormatter.Colored("+0-" + EffectFormatter.Scaled(MaxMushroomStamina), "Extra Stamina"),
+            Onset.Instant, "Extra Stamina", MaxMushroomStamina));
 
         // GenerateEffectList fills the slots in order and spends its quotas first: the first
         // minGoodEffects slots are drawn from GoodEffects, the next minBadEffects from
         // BadEffects, and only then does it choose freely. So a berry's slot decides whether
         // its valence is guaranteed or a coin flip, and that holds across every run even
         // though the effects themselves are reshuffled each time.
-        // RunAction also calls AddExtraStamina with mushroomStamAmt * 0.05, but in-game
-        // testing says no stamina actually arrives - green and blue berries were advertising
-        // a gain they do not give. Not shown until that is understood; the roll marker is the
-        // honest part of this branch.
-        string result;
+        //
+        // No status of its own, so the marker trails the stamina rather than claiming a place
+        // among the ranked lines.
+        string marker;
         if (index < manager.minGoodEffects)
         {
-            result = EffectColors.Positive + Marks + "</color>";
+            marker = EffectColors.Positive + Marks + "</color>";
         }
         else if (index < manager.minGoodEffects + manager.minBadEffects)
         {
-            result = EffectColors.Negative + Marks + "</color>";
+            marker = EffectColors.Negative + Marks + "</color>";
         }
         else
         {
             // Past both quotas the roll is genuinely free, so the marker says "either" -
             // half green, half red - rather than committing to this run's outcome.
-            result = EffectColors.Positive + "??</color>" + EffectColors.Negative + "??</color>";
+            marker = EffectColors.Positive + "??</color>" + EffectColors.Negative + "??</color>";
         }
 
-        return result;
+        lines.Add(new EffectLine(marker, Onset.Instant));
+        return lines;
     }
 
     /// <summary>A distance in metres, in the neutral colour. No unit space: "12.5m".</summary>
