@@ -21,6 +21,20 @@ internal static class EffectFormatter
     internal static string Scaled(float value) => Num(value * 100f);
 
     /// <summary>
+    /// Petrify, in the whole points the game actually gives you.
+    ///
+    /// It is the one status that is not continuous. `CharacterData.petrifyAmount` is an
+    /// `int`, and every route into it - `AddStatus`, `SetStatus`, `SubtractStatus` - runs
+    /// `Mathf.FloorToInt(amount * 100f)` before calling `AddPetrify`. So a `petrifyPerUse` of
+    /// `0.075` is **7**, and <see cref="Scaled"/> reporting 7.5 overstated every amulet whose
+    /// cost was not a whole percent.
+    ///
+    /// Floor, not round, because that is what the game does: 7.9 points is still 7.
+    /// </summary>
+    internal static string WholePoints(float fraction) =>
+        Mathf.Floor(fraction * 100f).ToString("F0");
+
+    /// <summary>
     /// A signed, coloured amount followed by the status icon - "+30 &lt;flame&gt;".
     ///
     /// The sign states which way the status moves, so no wording is needed and the line

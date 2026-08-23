@@ -196,6 +196,17 @@ internal static class EffectOrder
 
     private static int Compare(EffectLine a, EffectLine b)
     {
+        // Petrify last, under everything, whatever its onset. It is the one status that is a
+        // price rather than an effect - the amulets charge it for what they just did - so it
+        // reads as a footnote to the lines above it rather than as one of them. This is the
+        // only override of the keys below, and it is deliberate: without it the healing
+        // amulet's instant petrify cost sorted above the shield it buys.
+        int byPetrify = IsPrice(a).CompareTo(IsPrice(b));
+        if (byPetrify != 0)
+        {
+            return byPetrify;
+        }
+
         int byOnset = a.Onset.CompareTo(b.Onset);
         if (byOnset != 0)
         {
@@ -216,4 +227,11 @@ internal static class EffectOrder
     }
 
     private static int Direction(float amount) => amount < 0f ? 0 : 1;
+
+    /// <summary>
+    /// Whether a line is what the item costs rather than what it does. Only petrify, and
+    /// only ever sorted after everything else.
+    /// </summary>
+    private static int IsPrice(EffectLine line) =>
+        line.Status == STATUSTYPE.Petrify.ToString() ? 1 : 0;
 }

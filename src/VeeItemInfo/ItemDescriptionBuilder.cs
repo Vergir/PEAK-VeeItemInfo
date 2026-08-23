@@ -365,7 +365,8 @@ internal static class ItemDescriptionBuilder
                 // Petrify scales with how much healing was actually possible, clamped to
                 // this range, so a range is the honest thing to show.
                 Collect(effects, i, EffectColors.Get("Petrify") + "+"
-                    + EffectFormatter.Scaled(effect.minPetrify) + "-" + EffectFormatter.Scaled(effect.maxPetrify)
+                    + EffectFormatter.WholePoints(effect.minPetrify)
+                    + "-" + EffectFormatter.WholePoints(effect.maxPetrify)
                     + " " + StatusIcons.Tag("Petrify") + "</color>",
                     Onset.Instant, "Petrify", 1f);
             }
@@ -398,9 +399,15 @@ internal static class ItemDescriptionBuilder
                 // matches on exact type and so never sees a subclass - this is the only
                 // place that affliction is read.
                 Collect(effects, i, EffectFormatter.Affliction(superJump.affliction));
-                // AddStatus takes a 0-1 fraction, same scale as every other status.
-                Collect(effects, i, EffectFormatter.Effect(superJump.petrifyPerUse, "Petrify"),
-                    Onset.Instant, "Petrify", superJump.petrifyPerUse);
+                // AddStatus takes a 0-1 fraction like every other status, but petrify is
+                // floored to whole points on the way in - this read +7.5 where the game gives
+                // you 7.
+                if (superJump.petrifyPerUse != 0f)
+                {
+                    Collect(effects, i, EffectFormatter.Colored(
+                            "+" + EffectFormatter.WholePoints(superJump.petrifyPerUse), "Petrify"),
+                        Onset.Instant, "Petrify", superJump.petrifyPerUse);
+                }
             }
             // 'is' rather than an exact match: ItemCooking declares UpdateCookedBehavior and
             // CookVisually virtual, so the game clearly anticipates subclasses even though

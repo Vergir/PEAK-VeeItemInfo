@@ -42,6 +42,23 @@ internal static class EffectColors
     internal const string Positive = "<#5FD35F>";
     internal const string Negative = "<#F55C5C>";
 
+    /// <summary>
+    /// Status colours, matching the game's own bars.
+    ///
+    /// Every status with a bar is now **sampled from that bar** rather than guessed. Each
+    /// BarAffliction carries three Images - a dark backing on
+    /// `procedural_ui_image_default_sprite`, and the bright fill on `DitherStripes` and
+    /// `UI_Blur_Outlne_Thick`, which always agree. The bright pair is the status colour, and
+    /// `StatusIcons.LogDiagnostics` prints all three as `[colors]` so this table can be
+    /// checked against the game after an update rather than trusted.
+    ///
+    /// Eleven of them already matched exactly, which says the hand-picking was careful.
+    /// Petrify was missing outright; Spores had been taken off the icon instead of the bar
+    /// and was a point out in every channel.
+    ///
+    /// The keys the mod invents - Extra Stamina, Shield, Numb, Cook, Item, Float - have no
+    /// bar to scrape and stay hand-picked.
+    /// </summary>
     private static readonly Dictionary<string, string> Colors = new()
     {
         { "Hunger", "<#FFBD16>" },
@@ -62,9 +79,9 @@ internal static class EffectColors
         { "Thorns", "<#768E00>" },
         { "Shield", "<#D48E00>" },
 
-        // Colour-picked from the game's own status icons rather than guessed. Shield and
-        // Weight were sampled too and confirmed the existing values.
-        { "Spores", "<#A55B63>" },
+        // Sampled from the bar itself rather than the icon, which put this one point out
+        // in every channel. See the note above the table.
+        { "Spores", "<#A65C63>" },
 
         // The cooking hint. Not a status - it is the campfire icon's own orange.
         { "Cook", "<#E8722A>" },
@@ -74,13 +91,18 @@ internal static class EffectColors
         // against the overlay where the cap colour would not.
         { "Numb", "<#D3AC9B>" },
 
-        // Present in STATUSTYPE as of PEAK 2.1.a but never given a colour by the
-        // original mod. Listed explicitly so the gap is visible rather than silent.
-        // None of these appears on any item in the game, so none has been sampled yet.
-        { "Web", Neutral },
-        { "Arrow", Neutral },
-        { "Petrify", Neutral },
-        { "FlyTrap", Neutral },
+        // Petrify had no entry at all, so Get fell through to Neutral and every petrify
+        // figure came out plain grey beside a correctly blue icon - the icon is scraped, the
+        // colour was not. Muted blue-grey, not the brighter periwinkle it looks like on a
+        // screenshot.
+        { "Petrify", "<#858CAB>" },
+
+        // No item in 2.1.a inflicts any of these, so none reaches the overlay. Filled in
+        // anyway now that the bars are readable: a real colour costs nothing and stops the
+        // day one of them appears from being the day somebody discovers it renders grey.
+        { "Web", "<#E6E6E7>" },
+        { "Arrow", "<#D1A072>" },
+        { "FlyTrap", "<#187B32>" },
     };
 
     /// <summary>
