@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.TextCore;
+using UnityEngine.UI;
 
 namespace VeeItemInfo;
 
@@ -126,6 +127,7 @@ internal static class StatusIcons
 
         List<IconSource> icons = new();
         HashSet<string> seen = new();
+        BarColors.Clear();
 
         foreach (BarAffliction bar in bars)
         {
@@ -141,6 +143,7 @@ internal static class StatusIcons
             if (seen.Add(name))
             {
                 icons.Add(IconSource.FromSprite(name, sprite));
+                RecordBarColor(name, bar);
             }
         }
 
@@ -166,6 +169,18 @@ internal static class StatusIcons
         {
             icons.Add(IconSource.FromTexture("Item", genericItem));
         }
+
+        // The Rope Cannon describes two distances that would otherwise be a pair of bare
+        // numbers: how far it shoots, and how much rope that leaves behind. Its own icon and
+        // the spool's tell them apart without a word, and the anti-rope pair gets its own set
+        // so a floating rope never advertises itself with an ordinary one.
+        //
+        // Exact names, not substrings: "RopeShooter" is a prefix of "RopeShooterAnti", so a
+        // contains-match would hand whichever the database iterated first to both.
+        AddItemIcon(icons, seen, "RopeCannon", "RopeShooter");
+        AddItemIcon(icons, seen, "RopeCannonAnti", "RopeShooterAnti");
+        AddItemIcon(icons, seen, "RopeSpool", "RopeSpool");
+        AddItemIcon(icons, seen, "RopeSpoolAnti", "Anti-Rope Spool");
 
         // "You float." Scout's Initiative drops your gravity rather than granting speed, and
         // the balloon bunch is the game's own picture of that - no status icon exists for it.
@@ -292,6 +307,76 @@ internal static class StatusIcons
     /// Looks up an item's icon by prefab name through the game's own item database. Used for
     /// descriptions that need to show an item rather than a status.
     /// </summary>
+    /// <summary>
+    /// Every item in the database whose name mentions rope, for the log.
+    ///
+    /// The Rope Cannon and its anti-rope twin need one icon each, and so do their spools -
+    /// four icons keyed by name, which means knowing what the game calls them rather than
+    /// guessing at a spelling. Printed once by the diagnostics dump.
+    /// </summary>
+    internal static string RopeItemNames()
+    {
+        List<string> names = new();
+        foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
+        {
+            if (database.itemLookup == null)
+            {
+                continue;
+            }
+
+            foreach (Item entry in database.itemLookup.Values)
+            {
+                if (entry != null
+                    && entry.name.IndexOf("rope", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    names.Add(entry.name);
+                }
+            }
+        }
+
+        return string.Join(", ", names);
+    }
+
+    /// <summary>
+    /// Registers one item's icon under a key of our own, if the database has it.
+    /// </summary>
+    private static void AddItemIcon(List<IconSource> icons, HashSet<string> seen,
+        string key, string itemName)
+    {
+        Texture2D? icon = FindItemIconExact(itemName);
+        if (icon != null && seen.Add(key))
+        {
+            icons.Add(IconSource.FromTexture(key, icon));
+        }
+    }
+
+    /// <summary>
+    /// An item's icon by its exact database name. <see cref="FindItemIcon"/> matches on a
+    /// substring, which is fine for a one-off like BingBong and wrong wherever one item's
+    /// name is a prefix of another's.
+    /// </summary>
+    private static Texture2D? FindItemIconExact(string itemName)
+    {
+        foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
+        {
+            if (database.itemLookup == null)
+            {
+                continue;
+            }
+
+            foreach (Item entry in database.itemLookup.Values)
+            {
+                if (entry != null && entry.UIData != null
+                    && entry.name.Equals(itemName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry.UIData.GetIcon();
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static Texture2D? FindItemIcon(string nameContains)
     {
         // Resources rather than a singleton accessor: the database is a loaded
@@ -585,11 +670,48 @@ internal static class StatusIcons
         atlas = null;
         Tags.Clear();
         Glyphs.Clear();
+        BarColors.Clear();
+    }
+
+    /// <summary>
+    /// What the game paints each status bar, gathered while the icons are scraped.
+    ///
+    /// Every colour in <see cref="EffectColors"/> is hand-picked, and the ones sampled from
+    /// the game read better than the ones guessed - Petrify had no entry at all, so its
+    /// figure came out grey beside an icon that was correctly blue, because the icon is
+    /// scraped and the colour was not. This prints what the bar itself carries so a guess can
+    /// be replaced with the real value.
+    ///
+    /// A bar whose colour lives in its sprite rather than its Image tint reports white; that
+    /// is worth knowing too, because it means the value has to be sampled from the texture
+    /// rather than read off a field.
+    /// </summary>
+    private static readonly List<string> BarColors = new();
+
+    private static void RecordBarColor(string name, BarAffliction bar)
+    {
+        foreach (Image image in bar.GetComponentsInChildren<Image>(true))
+        {
+            if (image == bar.icon)
+            {
+                continue;
+            }
+
+            string sprite = image.sprite == null ? "none" : image.sprite.name;
+            BarColors.Add($"{name}=#{ColorUtility.ToHtmlStringRGB(image.color)}({sprite})");
+        }
     }
 
     internal static void LogDiagnostics()
     {
         Plugin.Log.LogInfo($"[icons] mapped={Tags.Count} atlas={(atlas == null ? "none" : $"{atlas.width}x{atlas.height}")} "
             + $"glyphs={spriteAsset?.spriteCharacterTable?.Count ?? -1} attempts={attempts}");
+
+        if (BarColors.Count > 0)
+        {
+            Plugin.Log.LogInfo("[colors] " + string.Join(" ", BarColors));
+        }
+
+        Plugin.Log.LogInfo("[ropes] " + RopeItemNames());
     }
 }

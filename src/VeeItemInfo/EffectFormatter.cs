@@ -97,10 +97,28 @@ internal static class EffectFormatter
     };
 
     /// <summary>
-    /// A distance. No space before the unit, matching how durations are written: a number
-    /// and its unit are one token, so "4.8m" and "8s" read the same way.
+    /// A distance already in PEAK metres. No space before the unit, matching how durations
+    /// are written: a number and its unit are one token, so "4.8m" and "8s" read the same way.
+    ///
+    /// Prefer <see cref="PeakMetres"/> - almost every figure in the game is a Unity unit and
+    /// has to be converted first. This overload is for the few places holding a distance that
+    /// is already in the player's units.
     /// </summary>
     internal static string Metres(float value) => Num(value) + "m";
+
+    /// <summary>
+    /// PEAK metres are 1.6 Unity units. Radii, ranges and raycast lengths in the game are all
+    /// Unity units, and printing one with an "m" after it understates the distance by well
+    /// over a third.
+    ///
+    /// Corroborated against the wiki: Remedy Fungus's healing AOE has <c>range = 5</c> and is
+    /// documented as reaching 8 metres, and 5 x 1.6 is 8. **Hardcoded** - the factor is a
+    /// convention of the game's art rather than a field anything exposes.
+    /// </summary>
+    private const float UnityUnitsToMetres = 1.6f;
+
+    /// <summary>A distance held in Unity units, shown in the metres a player reads.</summary>
+    internal static string PeakMetres(float unityUnits) => Metres(unityUnits * UnityUnitsToMetres);
 
     /// <summary>A duration, same no-space rule as <see cref="Metres"/>.</summary>
     internal static string Seconds(float value) => Num(value) + "s";
@@ -136,11 +154,14 @@ internal static class EffectFormatter
     }
 
     /// <summary>
-    /// How many icons fit on one line before it starts to read as a wall. Past four the eye
+    /// How many icons fit on one line before it starts to read as a wall. Past this the eye
     /// stops counting them and the overlay wraps at an arbitrary point instead of a chosen
     /// one, so the break is made here rather than left to the text box.
+    ///
+    /// Three rather than four: Scout's Tenacity heals six statuses, and four broke it into
+    /// an uneven 4 and 2 where three gives two even rows.
     /// </summary>
-    private const int IconsPerLine = 4;
+    private const int IconsPerLine = 3;
 
     /// <summary>
     /// Status icons in a row, each tinted its own colour, space separated and wrapped onto a
@@ -411,7 +432,7 @@ internal static class EffectFormatter
             Affliction_RadiateInfiniteStam effect = (Affliction_RadiateInfiniteStam)affliction;
             lines.Add(new EffectLine(
                 InfiniteStamina(effect.totalTime)
-                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>",
+                + EffectColors.Neutral + " " + PeakMetres(effect.radius) + "</color>",
                 Onset.OverTime, "Extra Stamina", 1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.MassSuperJump)
@@ -422,7 +443,7 @@ internal static class EffectFormatter
             lines.Add(new EffectLine(
                 EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
                 + EffectColors.Get("Float") + StatusIcons.Tag("Float") + "</color>"
-                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>",
+                + EffectColors.Neutral + " " + PeakMetres(effect.radius) + "</color>",
                 Onset.OverTime, "Float", 1f));
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Sunscreen)

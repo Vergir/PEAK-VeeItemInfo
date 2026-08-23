@@ -231,16 +231,41 @@ internal static class ItemDescriptionBuilder
                 //
                 // Rope has no character distinction for Detach_Rpc(), so this rides the
                 // timed poll and is hidden when that poll is too slow to trust.
+                // Rope.GetLengthInMeters rather than a divisor of our own - fuel is spent a
+                // segment at a time, and the game already owns the conversion. Same figure
+                // the hand-written "/ 4f" produced, now with something behind it.
+                //
+                // No icon. The Rope Cannon needs one because it prints two distances that
+                // would otherwise be a pair of bare numbers; a spool prints one, and you are
+                // holding the spool.
                 RopeSpool effect = (RopeSpool)itemComponents[i];
                 if (PluginConfig.LiveValuesTrustworthy)
                 {
-                    layout.Add(Block.Custom, Reach(effect.RopeFuel / 4f));
+                    layout.Add(Block.Custom, Reach(Rope.GetLengthInMeters(effect.RopeFuel)));
                 }
             }
             else if (itemComponents[i].GetType() == typeof(RopeShooter))
             {
+                // Two different distances, and the old single line conflated them. How far
+                // the cannon shoots is a raycast in Unity units; how much rope that leaves is
+                // a segment count. They were both being read off maxLength, which was only
+                // ever right by coincidence - maxLength is 30 units and length is 30
+                // segments, so dividing the wrong field by four still landed on 7.5.
                 RopeShooter effect = (RopeShooter)itemComponents[i];
-                layout.Add(Block.Custom, Reach(effect.maxLength / 4f));
+
+                // The anti-rope cannon shares this component with the ordinary one and has no
+                // flag of its own; what marks it is Antigrav, which makes the item float
+                // where it lies. A plain rope cannon has no reason to carry that, and the
+                // alternative was reading Rope.antigrav two prefabs deep through
+                // ropeAnchorWithRopePref.
+                bool anti = itemGameObj.GetComponent<Antigrav>() != null;
+
+                layout.Add(Block.Custom, EffectFormatter.Colored(
+                    EffectFormatter.PeakMetres(effect.maxLength),
+                    anti ? "RopeCannonAnti" : "RopeCannon"));
+                layout.Add(Block.Custom, EffectFormatter.Colored(
+                    EffectFormatter.Metres(Rope.GetLengthInMeters(effect.length)),
+                    anti ? "RopeSpoolAnti" : "RopeSpool"));
             }
             else if (itemComponents[i].GetType() == typeof(VineShooter))
             {

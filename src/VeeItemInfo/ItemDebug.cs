@@ -172,6 +172,10 @@ internal static class ItemDebug
         StickyItemComponent a => $" thorns={a.addThornsToStuckPlayer} weight={a.addWeightToStuckPlayer}"
             + $" throwCharge={a.throwChargeRequirement}",
         ShelfShroom a => BreaksInto(a),
+        RopeShooter a => $" shootRange={a.maxLength}u ropeSegments={a.length}"
+            + $" ropeMetres={Rope.GetLengthInMeters(a.length)}",
+        RopeSpool a => $" fuel={a.RopeFuel} startFuel={a.ropeStartFuel}"
+            + $" metres={Rope.GetLengthInMeters(a.RopeFuel)} anti={a.isAntiRope}",
         Peak.RitualDaggerFeedBehavior a => $" bonusStamina={a.bonusStamina}"
             + $" infiniteStaminaTime={a.infiniteStaminaTime}",
         ItemCooking c => $" canBeCooked={c.canBeCooked} wreck={c.wreckWhenCooked} preCooked={c.preCooked}"

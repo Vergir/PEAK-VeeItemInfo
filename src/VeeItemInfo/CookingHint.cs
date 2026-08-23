@@ -47,7 +47,7 @@ internal static class CookingHint
     internal static string Explodes(float radius, float injury = -1f)
     {
         string result = EffectColors.Get("Cook") + Fire + "</color>"
-            + EffectColors.Neutral + EffectFormatter.Arrow + EffectFormatter.Metres(radius) + "</color>";
+            + EffectColors.Neutral + EffectFormatter.Arrow + EffectFormatter.PeakMetres(radius) + "</color>";
 
         if (injury > 0f)
         {
