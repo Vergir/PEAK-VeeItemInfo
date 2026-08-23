@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Text;
 using Peak.Afflictions;
 using UnityEngine;
 
@@ -43,6 +45,177 @@ internal static class EffectFormatter
 
     /// <summary>Separates the two halves of a transformation, as in "item -> item item".</summary>
     internal const string Arrow = " → ";
+
+    /// <summary>
+    /// Infinite rather than a number. Font support for U+221E in PEAK's HUD font is not
+    /// verified - if it renders as a box, this is the single place to change.
+    /// </summary>
+    internal const string Infinity = "∞";
+
+    /// <summary>
+    /// Every status a player can carry that an item can clear, in the order they read best.
+    /// Curse is not in the list: almost everything excludes it, so it is handled separately.
+    /// </summary>
+    internal static readonly string[] AllStatuses =
+    {
+        "Hunger", "Injury", "Poison", "Spores", "Cold", "Hot", "Drowsy", "Thorns",
+    };
+
+    /// <summary>
+    /// A distance. No space before the unit, matching how durations are written: a number
+    /// and its unit are one token, so "4.8m" and "8s" read the same way.
+    /// </summary>
+    internal static string Metres(float value) => Num(value) + "m";
+
+    /// <summary>A duration, same no-space rule as <see cref="Metres"/>.</summary>
+    internal static string Seconds(float value) => Num(value) + "s";
+
+    /// <summary>
+    /// "8s ∞ &lt;stamina&gt;". The infinity mark is spaced away from the icon: flush it read
+    /// as one glyph rather than as a quantity standing in for a number.
+    /// </summary>
+    internal static string InfiniteStamina(float seconds) =>
+        EffectColors.Neutral + Seconds(seconds) + "</color> "
+        + EffectColors.Get("Extra Stamina") + Infinity + " " + StatusIcons.Tag("Extra Stamina") + "</color>";
+
+    /// <summary>The signed amount in the neutral cream, for figures owned by no one status.</summary>
+    private static string Figure(float amount) =>
+        EffectColors.White + (amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)) + "</color>";
+
+    /// <summary>
+    /// One amount applying to each of several statuses - "-35 &lt;poison&gt; &lt;spores&gt;",
+    /// meaning 35 off poison <i>and</i> 35 off spores. Space separated, because that is what
+    /// almost every multi-status item in the game does: Pandora's Lunchbox and Cure-All clear
+    /// the full amount from every status they touch.
+    ///
+    /// White, because a figure belonging to a whole set belongs to none of them in
+    /// particular. This is what keeps Cure-All to three lines instead of nine.
+    /// </summary>
+    internal static string MultiStatus(float amount, params string[] statuses)
+    {
+        if (amount == 0f || statuses.Length == 0)
+        {
+            return "";
+        }
+
+        return Figure(amount) + " " + IconRun(statuses);
+    }
+
+    /// <summary>
+    /// One amount <i>shared across</i> several statuses - "-60 &lt;injury&gt;/&lt;poison&gt;",
+    /// meaning 60 points of relief split between them, not 60 off each.
+    ///
+    /// Slashes are the whole difference from <see cref="MultiStatus"/>, and they are
+    /// deliberately reserved for this one meaning. Only the healing amulet works this way in
+    /// PEAK 2.1.a; using slashes anywhere else would blur the distinction that makes them
+    /// worth having.
+    /// </summary>
+    internal static string SharedBudget(float amount, params string[] statuses)
+    {
+        if (amount == 0f || statuses.Length == 0)
+        {
+            return "";
+        }
+
+        return Figure(amount) + " " + IconRun(statuses, EffectColors.White + "/</color>");
+    }
+
+    /// <summary>
+    /// How many icons fit on one line before it starts to read as a wall. Past four the eye
+    /// stops counting them and the overlay wraps at an arbitrary point instead of a chosen
+    /// one, so the break is made here rather than left to the text box.
+    /// </summary>
+    private const int IconsPerLine = 4;
+
+    /// <summary>
+    /// Status icons in a row, each tinted its own colour, space separated and wrapped onto a
+    /// new line every <see cref="IconsPerLine"/>.
+    /// </summary>
+    internal static string IconRun(string[] statuses, string separator = " ")
+    {
+        StringBuilder result = new();
+        for (int i = 0; i < statuses.Length; i++)
+        {
+            if (i > 0)
+            {
+                result.Append(i % IconsPerLine == 0 ? "\n" : separator);
+            }
+
+            result.Append(EffectColors.Get(statuses[i])).Append(StatusIcons.Tag(statuses[i])).Append("</color>");
+        }
+
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// A rate rather than a total - "-5 &lt;cold&gt; / s". Over-time effects are stated per
+    /// second so the figure means the same thing on every item, whatever its duration, and
+    /// so a nearly-spent lantern reads the same as a full one.
+    /// </summary>
+    internal static string PerSecond(float amountPerSecond, string effect)
+    {
+        if (amountPerSecond == 0f)
+        {
+            return "";
+        }
+
+        return Token(amountPerSecond, effect) + EffectColors.Neutral + " /s</color>";
+    }
+
+    /// <summary>
+    /// "Clear all status" as one line: the amount, then the icons it actually clears.
+    /// Dropping the excluded ones from the run says which are spared without naming them.
+    /// </summary>
+    internal static string ClearedStatuses(bool excludeCurse, IEnumerable<CharacterAfflictions.STATUSTYPE>? exclusions)
+    {
+        List<string> cleared = new();
+        foreach (string status in AllStatuses)
+        {
+            bool skipped = false;
+            if (exclusions != null)
+            {
+                foreach (CharacterAfflictions.STATUSTYPE exclusion in exclusions)
+                {
+                    if (exclusion.ToString() == status)
+                    {
+                        skipped = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!skipped)
+            {
+                cleared.Add(status);
+            }
+        }
+
+        if (!excludeCurse)
+        {
+            cleared.Add("Curse");
+        }
+
+        if (cleared.Count == 0)
+        {
+            return "";
+        }
+
+        // One line per status. Collapsing them into a shared "-100 <eight icons>" line read
+        // as a single pooled effect, which is what SharedBudget means - and clearing all
+        // status is emphatically not that. Every status loses its full 100.
+        StringBuilder lines = new();
+        foreach (string status in cleared)
+        {
+            if (lines.Length > 0)
+            {
+                lines.Append('\n');
+            }
+
+            lines.Append(Token(-1f, status));
+        }
+
+        return lines.ToString();
+    }
 
     /// <summary>
     /// A run of status icons, each in its own colour, slash-separated. For effects that hit
@@ -92,46 +265,44 @@ internal static class EffectFormatter
 
         if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.FasterBoi)
         {
+            // Three stamina icons for "you move faster", deliberately not the infinity mark:
+            // the stamina is not infinite here, only the movement is quicker, and reusing
+            // the infinity mark would say the wrong thing. The run and climb windows differ
+            // by climbDelay; the shorter one is the honest figure to show.
             Affliction_FasterBoi effect = (Affliction_FasterBoi)affliction;
-            result += EffectColors.Positive + "GAIN</color> " + Num(effect.totalTime + effect.climbDelay) + "s OF "
-                + EffectColors.Get("Extra Stamina") + Num(Mathf.Round(effect.moveSpeedMod * 100f)) + "% BONUS RUN SPEED</color> OR\n"
-                + EffectColors.Positive + "GAIN</color> " + Num(effect.totalTime) + "s OF " + EffectColors.Get("Extra Stamina")
-                + Num(Mathf.Round(effect.climbSpeedMod * 100f)) + "% BONUS CLIMB SPEED</color>\nAFTERWARDS, " + EffectColors.Negative
-                + "GAIN</color> " + EffectColors.Get("Drowsy") + Scaled(effect.drowsyOnEnd) + " DROWSY</color>\n";
+            result += EffectColors.Neutral + Seconds(effect.totalTime) + "</color> "
+                + IconRun(new[] { "Extra Stamina", "Extra Stamina", "Extra Stamina" });
+
+            if (effect.drowsyOnEnd > 0f)
+            {
+                result += EffectColors.Neutral + Arrow + "</color>" + Token(effect.drowsyOnEnd, "Drowsy");
+            }
+
+            result += "\n";
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ClearAllStatus)
         {
             Affliction_ClearAllStatus effect = (Affliction_ClearAllStatus)affliction;
-            result += EffectColors.Positive + "CLEAR ALL STATUS</color>";
-            if (effect.excludeCurse)
-            {
-                result += " EXCEPT " + EffectColors.Get("Curse") + "CURSE</color>";
-            }
-            result += "\n";
+            result += ClearedStatuses(effect.excludeCurse, null) + "\n";
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AddBonusStamina)
         {
+            // Was "GAIN 100 EXTRA STAMINA" - the last piece of prose left on a common path.
             Affliction_AddBonusStamina effect = (Affliction_AddBonusStamina)affliction;
-            result += EffectColors.Positive + "GAIN</color> " + EffectColors.Get("Extra Stamina")
-                + Scaled(effect.staminaAmount) + " EXTRA STAMINA</color>\n";
+            result += Token(effect.staminaAmount, "Extra Stamina") + "\n";
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.InfiniteStamina)
         {
+            // A duration, the infinity mark, and the stamina icon - flush, because the mark
+            // qualifies the icon rather than standing on its own. Where climbDelay grants a
+            // longer running window than a climbing one, the shorter figure is shown: it is
+            // the one you can rely on whatever you are doing.
             Affliction_InfiniteStamina effect = (Affliction_InfiniteStamina)affliction;
-            if (effect.climbDelay > 0)
-            {
-                result += EffectColors.Positive + "GAIN</color> " + Num(effect.totalTime + effect.climbDelay) + "s OF "
-                    + EffectColors.Get("Extra Stamina") + "INFINITE RUN STAMINA</color> OR\n" + EffectColors.Positive + "GAIN</color> "
-                    + Num(effect.totalTime) + "s OF " + EffectColors.Get("Extra Stamina") + "INFINITE CLIMB STAMINA</color>\n";
-            }
-            else
-            {
-                result += EffectColors.Positive + "GAIN</color> " + Num(effect.totalTime) + "s OF "
-                    + EffectColors.Get("Extra Stamina") + "INFINITE STAMINA\n";
-            }
+            result += InfiniteStamina(effect.totalTime) + "\n";
+
             if (effect.drowsyAffliction != null)
             {
-                result += "AFTERWARDS, " + Affliction(effect.drowsyAffliction);
+                result += Affliction(effect.drowsyAffliction);
             }
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AdjustStatus)
@@ -157,15 +328,54 @@ internal static class EffectFormatter
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Chaos)
         {
-            result += EffectColors.Positive + "CLEAR ALL STATUS</color>, THEN RANDOMIZE\n" + EffectColors.Get("Hunger") + "HUNGER</color>, "
-                + EffectColors.Get("Extra Stamina") + "EXTRA STAMINA</color>, " + EffectColors.Get("Injury") + "INJURY</color>,\n"
-                + EffectColors.Get("Poison") + "POISON</color>, " + EffectColors.Get("Cold") + "COLD</color>, "
-                + EffectColors.Get("Hot") + "HEAT</color>, " + EffectColors.Get("Drowsy") + "DROWSY</color>\n";
+            // Cleared, then an unknown amount handed straight back. Showing the pair on one
+            // line per status is what makes the randomisation legible - two separate blocks
+            // read as two unrelated effects rather than one shuffle.
+            foreach (string status in AllStatuses)
+            {
+                result += Token(-1f, status);
+
+                // Everything is cleared, but Thorns is the one status the randomiser cannot
+                // hand back, so it gets no "-> +?" tail.
+                if (status != "Thorns")
+                {
+                    result += EffectColors.Neutral + Arrow + "</color>"
+                        + EffectColors.Get(status) + "+?" + " " + StatusIcons.Tag(status) + "</color>";
+                }
+
+                result += "\n";
+            }
+        }
+        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Invincibility)
+        {
+            // Fortified Milk and the healing amulet both grant this. It was going unreported
+            // entirely - there was no branch for it, so the shield line simply never appeared.
+            result += EffectColors.Neutral + Seconds(affliction.totalTime) + "</color> "
+                + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>\n";
+        }
+        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.RadiateInfiniteStam)
+        {
+            // Scout's Ambition. Infinite stamina for everyone standing close enough, so the
+            // radius is as much the point as the duration.
+            Affliction_RadiateInfiniteStam effect = (Affliction_RadiateInfiniteStam)affliction;
+            result += InfiniteStamina(effect.totalTime)
+                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>\n";
+        }
+        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.MassSuperJump)
+        {
+            // Scout's Initiative. It does not grant speed - it launches everyone nearby and
+            // drops their gravity, so the balloon is the right symbol for what you feel.
+            Affliction_MassSuperJump effect = (Affliction_MassSuperJump)affliction;
+            result += EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
+                + StatusIcons.Tag("Float")
+                + EffectColors.Neutral + " " + Metres(effect.radius) + "</color>\n";
         }
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Sunscreen)
         {
+            // Just how long it lasts. Naming the biome it protects you in was the only
+            // English left on this line, and the item's own icon already says what it is.
             Affliction_Sunscreen effect = (Affliction_Sunscreen)affliction;
-            result += "PREVENT " + EffectColors.Get("Heat") + "HEAT</color> IN MESA'S SUN FOR " + Num(effect.totalTime) + "s\n";
+            result += EffectColors.Neutral + Seconds(effect.totalTime) + "</color>\n";
         }
 
         return result;
