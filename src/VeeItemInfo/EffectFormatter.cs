@@ -104,30 +104,10 @@ internal static class EffectFormatter
         EffectColors.White + (amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)) + "</color>";
 
     /// <summary>
-    /// One amount applying to each of several statuses - "-35 &lt;poison&gt; &lt;spores&gt;",
-    /// meaning 35 off poison <i>and</i> 35 off spores. Space separated, because that is what
-    /// almost every multi-status item in the game does: Pandora's Lunchbox and Cure-All clear
-    /// the full amount from every status they touch.
-    ///
-    /// White, because a figure belonging to a whole set belongs to none of them in
-    /// particular. This is what keeps Cure-All to three lines instead of nine.
-    /// </summary>
-    internal static string MultiStatus(float amount, params string[] statuses)
-    {
-        if (amount == 0f || statuses.Length == 0)
-        {
-            return "";
-        }
-
-        return Figure(amount) + " " + IconRun(statuses);
-    }
-
-    /// <summary>
     /// One amount <i>shared across</i> several statuses - "-60 &lt;injury&gt;/&lt;poison&gt;",
     /// meaning 60 points of relief split between them, not 60 off each.
     ///
-    /// Slashes are the whole difference from <see cref="MultiStatus"/>, and they are
-    /// deliberately reserved for this one meaning. Only the healing amulet works this way in
+    /// Slashes are deliberately reserved for this one meaning. Only the healing amulet works this way in
     /// PEAK 2.1.a; using slashes anywhere else would blur the distinction that makes them
     /// worth having.
     /// </summary>
@@ -230,21 +210,6 @@ internal static class EffectFormatter
         }
 
         return lines;
-    }
-
-    /// <summary>
-    /// A run of status icons, each in its own colour, slash-separated. For effects that hit
-    /// a whole set of statuses rather than one.
-    /// </summary>
-    internal static string IconList(string[] statuses)
-    {
-        string[] tokens = new string[statuses.Length];
-        for (int i = 0; i < statuses.Length; i++)
-        {
-            tokens[i] = EffectColors.Get(statuses[i]) + StatusIcons.Tag(statuses[i]) + "</color>";
-        }
-
-        return string.Join(EffectColors.White + "/</color>", tokens);
     }
 
     /// <summary>An instant status change, e.g. "+25 &lt;food&gt;".</summary>

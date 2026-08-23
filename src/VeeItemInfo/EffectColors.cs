@@ -38,6 +38,9 @@ internal static class EffectColors
         { "Hot", "<#C80918>" },
         { "Sleepy", "<#FF5CA4>" },
         { "Drowsy", "<#FF5CA4>" },
+        // Nearly black, and deliberately kept that way. It is the game's own curse colour,
+        // it is legible enough against the overlay in play, and it reads as cursed - which
+        // no brighter substitute would. Do not "fix" this.
         { "Curse", "<#1B0043>" },
         { "Weight", "<#A65A1C>" },
         { "Thorns", "<#768E00>" },
