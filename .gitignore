@@ -230,4 +230,12 @@ Config.Build.user.props
 # AI agent working notes, local only
 AGENTS.md
 BACKLOG.md
-docs/
+
+# The item spec IS tracked - it is a reference for people who have not installed the
+# mod. It carries no artwork of its own: every icon is hotlinked from peak.wiki.gg, so
+# nothing of PEAK's belongs to this repository. Never commit an icons/ directory here.
+docs/icons/
+
+# Python bytecode from the spec generator
+__pycache__/
+*.pyc
