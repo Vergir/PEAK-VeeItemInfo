@@ -18,6 +18,7 @@ internal static class PluginConfig
     internal static ConfigEntry<float> OffsetY = null!;
 
     internal static ConfigEntry<bool> PeriodicRefresh = null!;
+    internal static ConfigEntry<bool> RealRopeLength = null!;
     internal static ConfigEntry<bool> DebugLogging = null!;
 
     // One toggle per section of the overlay, so a player who only cares about weight can
@@ -63,6 +64,10 @@ internal static class PluginConfig
         PeriodicRefresh = config.Bind(Behaviour, "Periodic Refreshes", true,
             "Re-check held item once a second. Allows seeing item effects when watching other "
             + "players and fixes some weird glitches. Has a negligible performance cost");
+        RealRopeLength = config.Bind(Behaviour, "Show Real Chain Rope Length", false,
+            "By default Rope Cannon shows rope length using the same units as in-game UI for Rope Spool (7.5m). "
+            + "This option makes Rope Cannon show its real rope length (21m): "
+            + "this is consistent with all other distances in the game but breaks parity with Rope Spool");
         DebugLogging = config.Bind(Behaviour, "Debug Logging", false,
             "Debug logging. Keep off unless you're diagnosing problems.");
 

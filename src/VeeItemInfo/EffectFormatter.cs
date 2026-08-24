@@ -107,17 +107,24 @@ internal static class EffectFormatter
     internal static string Metres(float value) => Num(value) + "m";
 
     /// <summary>
-    /// PEAK metres are 1.6 Unity units. Radii, ranges and raycast lengths in the game are all
-    /// Unity units, and printing one with an "m" after it understates the distance by well
-    /// over a third.
+    /// How many metres a Unity unit is, read from the game rather than assumed.
     ///
-    /// Corroborated against the wiki: Remedy Fungus's healing AOE has <c>range = 5</c> and is
-    /// documented as reaching 8 metres, and 5 x 1.6 is 8. **Hardcoded** - the factor is a
-    /// convention of the game's art rather than a field anything exposes.
+    /// <c>CharacterStats.unitsToMeters</c> is what turns your hip height into the altitude the
+    /// end screen shows, so it is the game's own answer and not a convention borrowed from the
+    /// wiki. It is 1.6 in 2.1.a, which is what the amulet radii were checked against, and
+    /// reading it means a rebalance moves the whole overlay with it.
+    ///
+    /// The fallback is only for a call that lands before the field is touched; a static field
+    /// with an initialiser is set by the type initialiser, so in practice it is always there.
     /// </summary>
-    private const float UnityUnitsToMetres = 1.6f;
+    private static float UnityUnitsToMetres =>
+        CharacterStats.unitsToMeters > 0f ? CharacterStats.unitsToMeters : 1.6f;
 
-    /// <summary>A distance held in Unity units, shown in the metres a player reads.</summary>
+    /// <summary>
+    /// A distance held in Unity units, shown in the metres a player reads. Radii, ranges and
+    /// raycast lengths in the game are all Unity units, and printing one with an "m" after it
+    /// understates the distance by well over a third.
+    /// </summary>
     internal static string PeakMetres(float unityUnits) => Metres(unityUnits * UnityUnitsToMetres);
 
     /// <summary>A duration, same no-space rule as <see cref="Metres"/>.</summary>

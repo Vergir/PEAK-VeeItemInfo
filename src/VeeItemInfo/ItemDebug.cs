@@ -172,9 +172,15 @@ internal static class ItemDebug
         StickyItemComponent a => $" thorns={a.addThornsToStuckPlayer} weight={a.addWeightToStuckPlayer}"
             + $" throwCharge={a.throwChargeRequirement}",
         ShelfShroom a => BreaksInto(a),
+        VineShooter a => $" maxLength={a.maxLength}u -> {a.maxLength * CharacterStats.unitsToMeters}m",
+        MagicBean a => Beanstalk(a),
         Action_Spawn a => Spawns(a),
         RopeShooter a => $" shootRange={a.maxLength}u ropeSegments={a.length}"
-            + $" ropeMetres={Rope.GetLengthInMeters(a.length)}",
+            + $" ropeSpacing={RopeSpacingOf(a)}u segmentLength={RopeSegmentLengthOf(a)}u"
+            + $" ropeUnits={a.length * RopeSegmentLengthOf(a)}u"
+            + $" unitsToMeters={CharacterStats.unitsToMeters}"
+            + $" achievementMetres={Rope.GetLengthInMeters(a.length)}"
+            + RopeScales(a),
         RopeSpool a => $" fuel={a.RopeFuel} startFuel={a.ropeStartFuel}"
             + $" metres={Rope.GetLengthInMeters(a.RopeFuel)} anti={a.isAntiRope}",
         Peak.RitualDaggerFeedBehavior a => $" bonusStamina={a.bonusStamina}"
@@ -209,6 +215,152 @@ internal static class ItemDebug
             + $" minGood={manager.minGoodEffects} minBad={manager.minBadEffects}"
             + $" effects=[{string.Join(", ", manager.mushroomEffects)}]"
             + $" stamAmts=[{string.Join(", ", manager.mushroomStamAmt ?? new int[0])}]";
+    }
+
+    /// <summary>
+    /// What a Magic Bean grows into, and why its height is not simply maxLength.
+    ///
+    /// MagicBeanVine.Grow assigns <c>localScale = (w, currentLength, w)</c>, so maxLength is a
+    /// **scale factor on Y**, not a distance. The vine's real height is that scale times the
+    /// mesh's own height times whatever the ancestors are scaled by - the same shape as the
+    /// rope, where reading the field alone was wrong three times running.
+    /// </summary>
+    private static string Beanstalk(MagicBean bean)
+    {
+        if (bean.plantPrefab == null)
+        {
+            return " plantPrefab=<none>";
+        }
+
+        MagicBeanVine vine = bean.plantPrefab;
+        StringBuilder text = new($" maxLength={vine.maxLength} maxWidth={vine.maxWidth}"
+            + $" plantScale={vine.transform.localScale}");
+
+        Transform? origin = vine.vineOriginTransform;
+        if (origin == null)
+        {
+            text.Append(" vineOrigin=<none>");
+            return text.ToString();
+        }
+
+        text.Append($" originScale={origin.localScale} originLossy={origin.lossyScale}");
+
+        MeshFilter? filter = origin.GetComponentInChildren<MeshFilter>(true);
+        if (filter != null && filter.sharedMesh != null)
+        {
+            Vector3 size = filter.sharedMesh.bounds.size;
+            text.Append($" mesh={filter.name} meshSize={size}")
+                .Append($" heightIfUnitMesh={vine.maxLength * size.y}u");
+        }
+        else
+        {
+            text.Append(" mesh=<none>");
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>The rope prefab's own segment spacing, for checking the maths against a ping.</summary>
+    private static float RopeSpacingOf(RopeShooter shooter)
+    {
+        Rope? rope = RopeOf(shooter);
+        return rope != null ? rope.spacing : 0f;
+    }
+
+    /// <summary>Spacing after the segment prefab's Y scale, which is the real gap.</summary>
+    private static float RopeSegmentLengthOf(RopeShooter shooter)
+    {
+        Rope? rope = RopeOf(shooter);
+        if (rope == null)
+        {
+            return 0f;
+        }
+
+        return rope.spacing * (rope.ropeSegmentPrefab == null
+            ? 1f
+            : rope.ropeSegmentPrefab.transform.localScale.y);
+    }
+
+    /// <summary>
+    /// The Rope the cannon's anchor spawns, two prefab hops away.
+    /// </summary>
+    private static Rope? RopeOf(RopeShooter shooter)
+    {
+        RopeAnchorWithRope? anchor = shooter.ropeAnchorWithRopePref == null
+            ? null
+            : shooter.ropeAnchorWithRopePref.GetComponent<RopeAnchorWithRope>();
+        return anchor == null || anchor.ropePrefab == null
+            ? null
+            : anchor.ropePrefab.GetComponent<Rope>();
+    }
+
+    /// <summary>
+    /// Scales along the chain that turns `spacing` into a real distance.
+    ///
+    /// `spacing` is written into a ConfigurableJoint as `connectedAnchor`, which is measured
+    /// in the connected body's **local** space - so anything scaled below one along the way
+    /// shortens every gap, and the rope with it. 30 segments at 0.75 should span 22.5 units;
+    /// pinging one end from the other measures about 12, and a scale near 0.53 is what would
+    /// account for the difference.
+    /// </summary>
+    private static string RopeScales(RopeShooter shooter)
+    {
+        Rope? rope = RopeOf(shooter);
+        if (rope == null)
+        {
+            return " ropePrefab=<none>";
+        }
+
+        string segment = rope.ropeSegmentPrefab == null
+            ? "<none>"
+            : rope.ropeSegmentPrefab.transform.localScale.ToString();
+
+        return $" ropeScale={rope.transform.localScale} segmentScale={segment}"
+            + $" maxSegments={Rope.MaxSegments}" + SegmentJoint(rope);
+    }
+
+    /// <summary>
+    /// The joint that actually decides how far apart two rope segments sit.
+    ///
+    /// Rope writes <c>connectedAnchor = (0, -spacing, 0)</c>, but that is only the rest
+    /// position and only if the joint is not auto-configuring its own anchor - and a
+    /// ConfigurableJoint with a linear limit will stretch past it under the weight of the
+    /// segments below. 30 segments at the computed rest gap should span 7.9 units; measuring
+    /// from the anchor straight down gives 12 to 14, so something here is giving.
+    /// </summary>
+    private static string SegmentJoint(Rope rope)
+    {
+        if (rope.ropeSegmentPrefab == null)
+        {
+            return " segmentPrefab=<none>";
+        }
+
+        StringBuilder joint = new($"\n[item]     segment={rope.ropeSegmentPrefab.name}");
+        foreach (Component component in rope.ropeSegmentPrefab.GetComponents(typeof(Component)))
+        {
+            if (component == null || component is Transform)
+            {
+                continue;
+            }
+
+            joint.Append(" | ").Append(component.GetType().Name);
+            if (component is ConfigurableJoint cj)
+            {
+                joint.Append($" anchor={cj.anchor} connectedAnchor={cj.connectedAnchor}")
+                    .Append($" autoConfigure={cj.autoConfigureConnectedAnchor}")
+                    .Append($" motion=({cj.xMotion},{cj.yMotion},{cj.zMotion})")
+                    .Append($" linearLimit={cj.linearLimit.limit}")
+                    .Append($" spring={cj.linearLimitSpring.spring}/{cj.linearLimitSpring.damper}")
+                    .Append($" mass={(cj.GetComponent<Rigidbody>() == null ? -1f : cj.GetComponent<Rigidbody>().mass)}");
+            }
+            else if (component is Rigidbody rb)
+            {
+                joint.Append($" mass={rb.mass} drag={rb.linearDamping} useGravity={rb.useGravity}");
+            }
+        }
+
+        Describe(joint, rope.ropeSegmentPrefab.transform, 2);
+        return joint.ToString();
     }
 
     /// <summary>

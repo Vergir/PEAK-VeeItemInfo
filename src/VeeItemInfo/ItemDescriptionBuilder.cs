@@ -546,19 +546,55 @@ internal static class ItemDescriptionBuilder
         parts.Layout.Add(Block.Custom, EffectFormatter.Colored(
             EffectFormatter.PeakMetres(effect.maxLength),
             anti ? "RopeCannonAnti" : "RopeCannon"));
+        // Two answers here, and the game gives the smaller one.
+        //
+        // Rope.GetLengthInMeters is segments * 0.25, which is what the spool's own display
+        // shows - a Rope Cannon's rope and a spool rope of the same 30 segments hang side by
+        // side at the same length, and the game calls that 7.5m. Those are not the metres the
+        // altitude readout uses; they are almost exactly the rope's length in *units*, which
+        // is how the wiki came to publish 7.5m for it.
+        //
+        // The real span has to account for scale. Rope joins its segments with
+        // connectedAnchor = (0, -spacing, 0), and a joint anchor is measured in the connected
+        // body's *local* space, so the segment prefab's Y scale shrinks every gap: 0.75
+        // spacing against a 0.35 scale is 0.2625 a segment, and 30 of them span 7.875 units.
+        // In real metres that is 12.6, not the 22.5 units spacing alone suggests.
+        //
+        // Matching the game is the default, so the overlay and the spool never disagree in
+        // front of a player. The truth is a switch away.
+        float segment = RopeSegmentLength(effect);
+        string ropeLength = PluginConfig.RealRopeLength.Value && segment > 0f
+            ? EffectFormatter.PeakMetres(effect.length * segment)
+            : EffectFormatter.Metres(Rope.GetLengthInMeters(effect.length));
+
         parts.Layout.Add(Block.Custom, EffectFormatter.Colored(
-            EffectFormatter.Metres(Rope.GetLengthInMeters(effect.length)),
-            anti ? "RopeSpoolAnti" : "RopeSpool"));
+            ropeLength, anti ? "RopeSpoolAnti" : "RopeSpool"));
     }
     private static void DescribeVineShooter(Component component, Parts parts)
     {
+        // Chain Launcher. maxLength is the raycast it fires along, in Unity units like every
+        // other range - the old "/ (5f / 3f)" was a fit made before CharacterStats.unitsToMeters
+        // was found, and it reported 30m for a chain that lands about 48 units away and that
+        // the wiki puts at 80.
         VineShooter effect = (VineShooter)component;
-        parts.Layout.Add(Block.Custom, Reach(effect.maxLength / (5f / 3f)));
+        parts.Layout.Add(Block.Custom, ReachInUnits(effect.maxLength));
     }
     private static void DescribeMagicBean(Component component, Parts parts)
     {
+        // maxLength is written into the vine's localScale.y as it grows, so it reads like a
+        // scale rather than a distance - and scaling the stalk mesh by it gives 94 units,
+        // which is nonsense. The mesh's long axis is Z, not Y, so its bounds are not the
+        // height of the thing being scaled; something in the renderer compensates.
+        //
+        // Taken as plain Unity units it gives 32m, and a height-tracking mod reads 28m of
+        // gain on a vine that grew skewed - so the real length is at least that. 32 is where
+        // it should land. That also matches how every other range in the game is authored,
+        // and it retires the last of the invented divisors: this used to be "/ 2f".
         MagicBean effect = (MagicBean)component;
-        parts.Layout.Add(Block.Custom, Reach(effect.plantPrefab.maxLength / 2f));
+        if (effect.plantPrefab != null)
+        {
+            parts.Layout.Add(Block.Custom, ReachInUnits(effect.plantPrefab.maxLength));
+        }
     }
     private static void DescribeShelfShroom(Component component, Parts parts)
     {
@@ -746,7 +782,54 @@ internal static class ItemDescriptionBuilder
     }
 
 
+    /// <summary>
+    /// How far apart two segments of the rope this cannon fires sit, in Unity units, or zero
+    /// if the prefab chain cannot be walked.
+    ///
+    /// A ConfigurableJoint pins a point on its own body to a point on the connected one, so
+    /// the gap between their centres is **both** offsets added, not either alone:
+    ///
+    ///   <c>anchor.y</c>          0.5  - set on the segment prefab
+    ///   <c>Rope.spacing</c>      0.75 - written as connectedAnchor = (0, -spacing, 0)
+    ///
+    /// and both are local-space offsets, so the segment prefab's Y scale applies to each.
+    /// (0.5 + 0.75) x 0.35 is 0.4375 a segment, which puts a 30-segment rope at 13.1 units
+    /// and 21 metres. Measuring from the anchor straight down gives 12 to 14 units, and
+    /// climbing one with a height-tracking mod reads about 20 metres.
+    ///
+    /// Reading either offset on its own is what made three earlier attempts wrong - spacing
+    /// alone says 22.5 units, connectedAnchor scaled alone says 7.9, and the truth is the sum.
+    /// The joint is Locked on every axis with a zero linear limit, so none of this stretches:
+    /// the rope really is rigid and the figure really is derivable.
+    ///
+    /// Guarded at every step: these are prefab references, and a missing one is a null the day
+    /// the game reorganises them.
+    /// </summary>
+    private static float RopeSegmentLength(RopeShooter shooter)
+    {
+        RopeAnchorWithRope? anchorPrefab = shooter.ropeAnchorWithRopePref == null
+            ? null
+            : shooter.ropeAnchorWithRopePref.GetComponent<RopeAnchorWithRope>();
+        Rope? rope = anchorPrefab == null || anchorPrefab.ropePrefab == null
+            ? null
+            : anchorPrefab.ropePrefab.GetComponent<Rope>();
+        if (rope == null || rope.ropeSegmentPrefab == null)
+        {
+            return 0f;
+        }
+
+        ConfigurableJoint? joint = rope.ropeSegmentPrefab.GetComponent<ConfigurableJoint>();
+        float anchor = joint == null ? 0f : Mathf.Abs(joint.anchor.y);
+        float scale = rope.ropeSegmentPrefab.transform.localScale.y;
+        return (anchor + rope.spacing) * scale;
+    }
+
     /// <summary>A distance in metres, in the neutral colour. No unit space: "12.5m".</summary>
+    /// <summary>A distance held in Unity units, in the neutral colour.</summary>
+    private static string ReachInUnits(float unityUnits) =>
+        EffectColors.Neutral + EffectFormatter.PeakMetres(unityUnits) + "</color>";
+
+    /// <summary>A distance already in the metres the game shows, in the neutral colour.</summary>
     private static string Reach(float metres) =>
         EffectColors.Neutral + EffectFormatter.Metres(metres) + "</color>";
 
