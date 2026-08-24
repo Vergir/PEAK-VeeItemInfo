@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.TextCore;
-using UnityEngine.UI;
 
 namespace VeeItemInfo;
 
@@ -127,7 +126,6 @@ internal static class StatusIcons
 
         List<IconSource> icons = new();
         HashSet<string> seen = new();
-        BarColors.Clear();
 
         foreach (BarAffliction bar in bars)
         {
@@ -143,7 +141,6 @@ internal static class StatusIcons
             if (seen.Add(name))
             {
                 icons.Add(IconSource.FromSprite(name, sprite));
-                RecordBarColor(name, bar);
             }
         }
 
@@ -307,36 +304,6 @@ internal static class StatusIcons
     /// Looks up an item's icon by prefab name through the game's own item database. Used for
     /// descriptions that need to show an item rather than a status.
     /// </summary>
-    /// <summary>
-    /// Every item in the database whose name mentions rope, for the log.
-    ///
-    /// The Rope Cannon and its anti-rope twin need one icon each, and so do their spools -
-    /// four icons keyed by name, which means knowing what the game calls them rather than
-    /// guessing at a spelling. Printed once by the diagnostics dump.
-    /// </summary>
-    internal static string RopeItemNames()
-    {
-        List<string> names = new();
-        foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
-        {
-            if (database.itemLookup == null)
-            {
-                continue;
-            }
-
-            foreach (Item entry in database.itemLookup.Values)
-            {
-                if (entry != null
-                    && entry.name.IndexOf("rope", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    names.Add(entry.name);
-                }
-            }
-        }
-
-        return string.Join(", ", names);
-    }
-
     /// <summary>
     /// Registers one item's icon under a key of our own, if the database has it.
     /// </summary>
@@ -670,48 +637,28 @@ internal static class StatusIcons
         atlas = null;
         Tags.Clear();
         Glyphs.Clear();
-        BarColors.Clear();
     }
+
+    private static string lastLogged = "";
 
     /// <summary>
-    /// What the game paints each status bar, gathered while the icons are scraped.
+    /// The icon state, logged when it changes rather than every time it is asked for.
     ///
-    /// Every colour in <see cref="EffectColors"/> is hand-picked, and the ones sampled from
-    /// the game read better than the ones guessed - Petrify had no entry at all, so its
-    /// figure came out grey beside an icon that was correctly blue, because the icon is
-    /// scraped and the colour was not. This prints what the bar itself carries so a guess can
-    /// be replaced with the real value.
-    ///
-    /// A bar whose colour lives in its sprite rather than its Image tint reports white; that
-    /// is worth knowing too, because it means the value has to be sampled from the texture
-    /// rather than read off a field.
+    /// This is a snapshot of something that settles once and then holds, and it was being
+    /// written every refresh - a line a second saying the same thing, alongside three others
+    /// doing the same. Four state dumps at one hertz drowned the lines that report an actual
+    /// event, which is the whole reason to keep a log.
     /// </summary>
-    private static readonly List<string> BarColors = new();
-
-    private static void RecordBarColor(string name, BarAffliction bar)
-    {
-        foreach (Image image in bar.GetComponentsInChildren<Image>(true))
-        {
-            if (image == bar.icon)
-            {
-                continue;
-            }
-
-            string sprite = image.sprite == null ? "none" : image.sprite.name;
-            BarColors.Add($"{name}=#{ColorUtility.ToHtmlStringRGB(image.color)}({sprite})");
-        }
-    }
-
     internal static void LogDiagnostics()
     {
-        Plugin.Log.LogInfo($"[icons] mapped={Tags.Count} atlas={(atlas == null ? "none" : $"{atlas.width}x{atlas.height}")} "
-            + $"glyphs={spriteAsset?.spriteCharacterTable?.Count ?? -1} attempts={attempts}");
+        string state = $"[icons] mapped={Tags.Count} "
+            + $"atlas={(atlas == null ? "none" : $"{atlas.width}x{atlas.height}")} "
+            + $"glyphs={spriteAsset?.spriteCharacterTable?.Count ?? -1} attempts={attempts}";
 
-        if (BarColors.Count > 0)
+        if (state != lastLogged)
         {
-            Plugin.Log.LogInfo("[colors] " + string.Join(" ", BarColors));
+            lastLogged = state;
+            Plugin.Log.LogInfo(state);
         }
-
-        Plugin.Log.LogInfo("[ropes] " + RopeItemNames());
     }
 }

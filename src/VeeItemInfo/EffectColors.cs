@@ -48,9 +48,12 @@ internal static class EffectColors
     /// Every status with a bar is now **sampled from that bar** rather than guessed. Each
     /// BarAffliction carries three Images - a dark backing on
     /// `procedural_ui_image_default_sprite`, and the bright fill on `DitherStripes` and
-    /// `UI_Blur_Outlne_Thick`, which always agree. The bright pair is the status colour, and
-    /// `StatusIcons.LogDiagnostics` prints all three as `[colors]` so this table can be
-    /// checked against the game after an update rather than trusted.
+    /// `UI_Blur_Outlne_Thick`, which always agree. The bright pair is the status colour.
+    ///
+    /// The scrape that read them was a throwaway: it printed every bar's three Images once a
+    /// second, which is how this table was checked, and it was deleted once the table matched.
+    /// Bring it back the same way if a game update moves the palette - a loop over
+    /// `FindObjectsByType&lt;BarAffliction&gt;` reading `GetComponentsInChildren&lt;Image&gt;`.
     ///
     /// Eleven of them already matched exactly, which says the hand-picking was careful.
     /// Petrify was missing outright; Spores had been taken off the icon instead of the bar
