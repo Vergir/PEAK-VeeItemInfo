@@ -17,7 +17,7 @@ internal static class PluginConfig
     internal static ConfigEntry<float> OffsetX = null!;
     internal static ConfigEntry<float> OffsetY = null!;
 
-    internal static ConfigEntry<float> ForceUpdateTime = null!;
+    internal static ConfigEntry<bool> PeriodicRefresh = null!;
     internal static ConfigEntry<bool> DebugLogging = null!;
 
     // One toggle per section of the overlay, so a player who only cares about weight can
@@ -52,19 +52,19 @@ internal static class PluginConfig
             "Height of the text's bottom edge above the active slot. Lines grow upward from here.");
 
         ShowCustom = config.Bind(Sections, "Show Custom", true,
-            "Item-specific facts that are not status changes: reach in metres, how many "
-            + "pieces something breaks into, durations.");
+            "Item-specific facts that are not status changes, like length of Rope Cannon rope");
         ShowEffects = config.Bind(Sections, "Show Effects", true,
-            "Status changes, whether they land on you or on everyone nearby.");
+            "Status changes, like -20 Hunger");
         ShowCooking = config.Bind(Sections, "Show Cooking Hint", true,
             "Whether cooking the item helps or ruins it.");
         ShowWeight = config.Bind(Sections, "Show Weight", true,
-            "The item's carry weight.");
+            "The item's weight.");
 
-        ForceUpdateTime = Bind(config, Behaviour, "Force Update Time", 1f, 0.1f, 10f,
-            "Seconds between forced refreshes for values that no game event reports.");
+        PeriodicRefresh = config.Bind(Behaviour, "Periodic Refreshes", true,
+            "Re-check held item once a second. Allows seeing item effects when watching other "
+            + "players and fixes some weird glitches. Has a negligible performance cost");
         DebugLogging = config.Bind(Behaviour, "Debug Logging", false,
-            "Log overlay placement numbers to the BepInEx console. For diagnosing position problems.");
+            "Debug logging. Keep off unless you're diagnosing problems.");
 
         // Re-apply on change so the overlay can be styled and positioned while the game
         // is running, instead of a rebuild-and-relaunch for every nudge.
@@ -90,11 +90,4 @@ internal static class PluginConfig
         Block.Weight => ShowWeight.Value,
         _ => true,
     };
-
-    /// <summary>
-    /// Some values (scorpion sting damage, rope remaining) change continuously with no
-    /// hook to catch them, so they are only shown when the poll is frequent enough to
-    /// keep them honest.
-    /// </summary>
-    internal static bool LiveValuesTrustworthy => ForceUpdateTime.Value <= 1f;
 }

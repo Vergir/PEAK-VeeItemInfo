@@ -9,6 +9,13 @@ namespace VeeItemInfo;
 /// </summary>
 internal static class ItemInfoController
 {
+    /// <summary>
+    /// How long between periodic re-checks. Not a config value: the setting is whether they
+    /// happen at all, because the thing being waited for - somebody else swapping the item
+    /// in their hands - is not something a player tunes in fractions of a second.
+    /// </summary>
+    private const float RefreshInterval = 1f;
+
     private static bool dirty = true;
     private static float lastKnownSinceItemAttach;
 
@@ -55,10 +62,23 @@ internal static class ItemInfoController
                 dirty = false;
                 Refresh(item);
             }
-            else if (Mathf.Abs(observed.data.sinceItemAttach - lastKnownSinceItemAttach) >= PluginConfig.ForceUpdateTime.Value)
+            else if (PluginConfig.PeriodicRefresh.Value
+                && Mathf.Abs(observed.data.sinceItemAttach - lastKnownSinceItemAttach) >= RefreshInterval)
             {
-                // Re-render on the next frame rather than here, so a slow build can't
-                // land in the same frame as the poll that asked for it.
+                // This reads as a timer and is really a change detector. sinceItemAttach
+                // counts up in real time *and* CharacterItems resets it to zero whenever an
+                // item is attached, so the same comparison fires on a schedule and fires at
+                // once when the item changes hands. That second half is what keeps the
+                // overlay honest about a player you are only watching: their Equip does
+                // reach us, but nothing else about them does.
+                //
+                // It used to be justified as a poll for values that move on their own -
+                // scorpion damage and rope fuel. Neither was ever read live: the scorpion's
+                // "50-105" is a literal string and the rope figure has since been dropped.
+                // Nothing the overlay prints changes while you hold it.
+                //
+                // Re-render on the next frame rather than here, so a slow build can't land in
+                // the same frame as the check that asked for it.
                 dirty = true;
                 lastKnownSinceItemAttach = observed.data.sinceItemAttach;
             }

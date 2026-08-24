@@ -235,6 +235,14 @@ internal static class Overlay
         if (StatusIcons.SpriteAsset != null && textMesh.spriteAsset != StatusIcons.SpriteAsset)
         {
             textMesh.spriteAsset = StatusIcons.SpriteAsset;
+
+            // The text has to be built again, not just re-pointed at the new asset.
+            // StatusIcons.Tag falls back to the status name in capitals when the atlas is not
+            // ready, so a description assembled before this point contains the literal word
+            // HUNGER rather than a sprite tag - and assigning a sprite asset cannot go back
+            // and change a string that has already been built. Until this existed, the only
+            // thing that repaired it was the periodic re-check happening to come round.
+            ItemInfoController.MarkDirty();
             // Icons change the line metrics, so the cached height is now stale.
             lastText = "";
             ItemInfoController.MarkDirty();
