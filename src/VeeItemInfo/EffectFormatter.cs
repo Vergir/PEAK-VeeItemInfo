@@ -449,7 +449,14 @@ internal static class EffectFormatter
         else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Sunscreen)
         {
             // Just how long it lasts. Naming the biome it protects you in was the only
-            // English left on this line, and the item's own icon already says what it is.
+            // English this line ever had, and the item's own icon on the line above already
+            // says what it is.
+            //
+            // No icon of its own, and two candidates were tried and dropped. Heat behind a
+            // shield overpromises: AddSunHeat is skipped for anyone wearing sunscreen, so
+            // this is immunity to the *sun*, and a campfire will still cook you. The parasol
+            // - the other half of that same check - is accurate but reads as a different
+            // item rather than as this one's duration.
             Affliction_Sunscreen effect = (Affliction_Sunscreen)affliction;
             lines.Add(new EffectLine(EffectColors.Neutral + Seconds(effect.totalTime) + "</color>",
                 Onset.OverTime));

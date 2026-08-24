@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -56,6 +57,9 @@ internal static class ItemDescriptionBuilder
         // sign - just the number and the icon.
         layout.Add(Block.Weight, EffectFormatter.Plain(weight, "Weight"));
 
+        // Each component is looked up rather than tested against in turn - see Handlers.
+        Parts parts = new(layout, effects, itemGameObj, consumable);
+
         for (int i = 0; i < itemComponents.Length; i++)
         {
             // Cooking switches actions off rather than removing them -
@@ -67,401 +71,157 @@ internal static class ItemDescriptionBuilder
                 continue;
             }
 
-            if (itemComponents[i].GetType() == typeof(Action_RestoreHunger))
+            Action<Component, Parts>? describe = HandlerFor(itemComponents[i].GetType());
+            if (describe != null)
             {
-                Action_RestoreHunger effect = (Action_RestoreHunger)itemComponents[i];
-                if (consumable || !effect.OnConsumed)
-                {
-                    Collect(effects, i, EffectFormatter.Effect(effect.restorationAmount * -1f, "Hunger"),
-                        Onset.Instant, "Hunger", effect.restorationAmount * -1f);
-                }
+                parts.Source = i;
+                describe(itemComponents[i], parts);
             }
-            else if (itemComponents[i].GetType() == typeof(Action_GiveExtraStamina))
-            {
-                Action_GiveExtraStamina effect = (Action_GiveExtraStamina)itemComponents[i];
-                if (consumable || !effect.OnConsumed)
-                {
-                    Collect(effects, i, EffectFormatter.Effect(effect.amount, "Extra Stamina"),
-                        Onset.Instant, "Extra Stamina", effect.amount);
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_InflictPoison))
-            {
-                // The delay used to be spelled out as "AFTER 10s,". Dropped: the "/ 8s"
-                // suffix already says this is spread over time, and the lead-in was the
-                // only English on an otherwise symbolic line.
-                Action_InflictPoison effect = (Action_InflictPoison)itemComponents[i];
-                Collect(effects, i,
-                    EffectFormatter.OverTime(effect.poisonPerSecond * effect.inflictionTime,
-                        effect.inflictionTime, "Poison"),
-                    Onset.OverTime, "Poison", effect.poisonPerSecond);
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_AddOrRemoveThorns))
-            {
-                Action_AddOrRemoveThorns effect = (Action_AddOrRemoveThorns)itemComponents[i];
-                // UpdateWeight sets Thorns to 0.025 per *increment* returned by
-                // GetTotalThornStatusIncrements, and in-game testing on Prickleberry shows a
-                // thorn is worth two of those - 2 thorns read as 10, not 5. So 0.05 per thorn.
-                Collect(effects, i, EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns"),
-                    Onset.Instant, "Thorns", effect.thornCount * 0.05f);
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_ModifyStatus))
-            {
-                Action_ModifyStatus effect = (Action_ModifyStatus)itemComponents[i];
-                if (consumable || !effect.OnConsumed)
-                {
-                    Collect(effects, i,
-                        EffectFormatter.Effect(effect.changeAmount, effect.statusType.ToString()),
-                        Onset.Instant, effect.statusType.ToString(), effect.changeAmount);
-
-                    // CharacterAfflictions.SubtractStatus takes the same amount off Spores
-                    // whenever Poison is reduced deliberately:
-                    //
-                    //   if (statusType == Poison && !decreasedNaturally && character.IsLocal)
-                    //       SubtractStatus(Spores, amount);
-                    //
-                    // So every poison cure is silently a spores cure of equal size. It is
-                    // one-way - adding poison adds no spores - and it does not apply to the
-                    // passive per-second decay. First Aid Kit, Antidote and Medicinal Root
-                    // all cure spores through this and nothing else; the wiki was right and
-                    // the components alone do not show it.
-                    if (effect.statusType == CharacterAfflictions.STATUSTYPE.Poison && effect.changeAmount < 0f)
-                    {
-                        Collect(effects, i, EffectFormatter.Effect(effect.changeAmount, "Spores"),
-                            Onset.Instant, "Spores", effect.changeAmount);
-                    }
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_ApplyAffliction))
-            {
-                Action_ApplyAffliction effect = (Action_ApplyAffliction)itemComponents[i];
-                Collect(effects, i, EffectFormatter.Affliction(effect.affliction));
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Numb))
-            {
-                // Mandrake. Numbness hides your stamina bar, which is the whole reason to
-                // cook one first - and the only icon in the mod that had to be shipped
-                // rather than scraped, because numbness is not a STATUSTYPE.
-                Action_Numb effect = (Action_Numb)itemComponents[i];
-                Collect(effects, i, EffectFormatter.Colored(EffectFormatter.Seconds(effect.numbAmount), "Numb"),
-                    Onset.OverTime, "Numb", 1f);
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Die))
-            {
-                // Cursed Skull. Nothing else in the game does this, and no number describes
-                // it - "the worst thing" is the whole message, so it leads in the Custom
-                // section above everything the item gives everyone else.
-                layout.Add(Block.Custom, EffectColors.Negative + "???</color>");
-            }
-            else if (itemComponents[i].GetType() == typeof(Peak.RitualDaggerFeedBehavior))
-            {
-                // The other half of the Ritual Dagger, and the reason the wiki lists effects
-                // the item does not carry: RPC_RitualDaggerBuff runs on every client and
-                // skips only the character who was fed the dagger, so everybody else in the
-                // lobby - the feeder included - is healed and handed stamina.
-                //
-                // This is not reachable as an ItemAction. IExtraFeedBehavior is its own
-                // hook, called when one player feeds an item to another, and
-                // RitualDaggerFeedBehavior is the only thing in 2.1.a that implements it.
-                Peak.RitualDaggerFeedBehavior effect = (Peak.RitualDaggerFeedBehavior)itemComponents[i];
-
-                // ClearAllStatus() with no arguments, so curse and petrify are spared.
-                Collect(effects, i, EffectFormatter.ClearedStatuses(true, null));
-
-                // AddExtraStamina takes the same 0-1 fraction as a status.
-                Collect(effects, i, EffectFormatter.Effect(effect.bonusStamina, "Extra Stamina"),
-                    Onset.Instant, "Extra Stamina", effect.bonusStamina);
-
-                if (effect.infiniteStaminaTime > 0f)
-                {
-                    Collect(effects, i, EffectFormatter.InfiniteStamina(effect.infiniteStaminaTime),
-                        Onset.OverTime, "Extra Stamina", 1f);
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_RandomMushroomEffect))
-            {
-                Collect(effects, i, DescribeMushroom((Action_RandomMushroomEffect)itemComponents[i]));
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_ClearAllStatus))
-            {
-                Action_ClearAllStatus effect = (Action_ClearAllStatus)itemComponents[i];
-                Collect(effects, i,
-                    EffectFormatter.ClearedStatuses(effect.excludeCurse, effect.otherExclusions));
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_ApplyMassAffliction))
-            {
-                // The "NEARBY PLAYERS WILL RECEIVE:" header is gone. Nothing replaces it -
-                // the effects speak for themselves, and a header was a whole line of English
-                // for a distinction no item ever needs stated twice.
-                Action_ApplyMassAffliction effect = (Action_ApplyMassAffliction)itemComponents[i];
-                Collect(effects, i, EffectFormatter.Affliction(effect.affliction));
-                for (int j = 0; j < effect.extraAfflictions.Length; j++)
-                {
-                    Collect(effects, i, EffectFormatter.Affliction(effect.extraAfflictions[j]));
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_RaycastDart))
-            {
-                Action_RaycastDart effect = (Action_RaycastDart)itemComponents[i];
-                for (int j = 0; j < effect.afflictionsOnHit.Length; j++)
-                {
-                    Collect(effects, i, EffectFormatter.Affliction(effect.afflictionsOnHit[j]));
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Lantern))
-            {
-                Collect(effects, i, DescribeLantern(itemGameObj));
-            }
-            else if (itemComponents[i].GetType() == typeof(Constructable))
-            {
-                Constructable effect = (Constructable)itemComponents[i];
-                if (effect.constructedPrefab.name.Equals("PortableStovetop_Placed"))
-                {
-                    Campfire campfire = effect.constructedPrefab.GetComponent<Campfire>();
-                    layout.Add(Block.Custom, EffectColors.Neutral + EffectFormatter.Seconds(campfire.burnsFor)
-                        + "</color> " + EffectColors.Get("Cook") + StatusIcons.Tag("Cook") + "</color>");
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(RopeSpool))
-            {
-                // Only what is left on the spool. Printing the maximum too gave two bare
-                // numbers in the same format with nothing to tell them apart, and the
-                // maximum is the same on every spool anyway - it says nothing about the one
-                // in your hand.
-                //
-                // Rope has no character distinction for Detach_Rpc(), so this rides the
-                // timed poll and is hidden when that poll is too slow to trust.
-                // Rope.GetLengthInMeters rather than a divisor of our own - fuel is spent a
-                // segment at a time, and the game already owns the conversion. Same figure
-                // the hand-written "/ 4f" produced, now with something behind it.
-                //
-                // No icon. The Rope Cannon needs one because it prints two distances that
-                // would otherwise be a pair of bare numbers; a spool prints one, and you are
-                // holding the spool.
-                RopeSpool effect = (RopeSpool)itemComponents[i];
-                if (PluginConfig.LiveValuesTrustworthy)
-                {
-                    layout.Add(Block.Custom, Reach(Rope.GetLengthInMeters(effect.RopeFuel)));
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(RopeShooter))
-            {
-                // Two different distances, and the old single line conflated them. How far
-                // the cannon shoots is a raycast in Unity units; how much rope that leaves is
-                // a segment count. They were both being read off maxLength, which was only
-                // ever right by coincidence - maxLength is 30 units and length is 30
-                // segments, so dividing the wrong field by four still landed on 7.5.
-                RopeShooter effect = (RopeShooter)itemComponents[i];
-
-                // The anti-rope cannon shares this component with the ordinary one and has no
-                // flag of its own; what marks it is Antigrav, which makes the item float
-                // where it lies. A plain rope cannon has no reason to carry that, and the
-                // alternative was reading Rope.antigrav two prefabs deep through
-                // ropeAnchorWithRopePref.
-                bool anti = itemGameObj.GetComponent<Antigrav>() != null;
-
-                layout.Add(Block.Custom, EffectFormatter.Colored(
-                    EffectFormatter.PeakMetres(effect.maxLength),
-                    anti ? "RopeCannonAnti" : "RopeCannon"));
-                layout.Add(Block.Custom, EffectFormatter.Colored(
-                    EffectFormatter.Metres(Rope.GetLengthInMeters(effect.length)),
-                    anti ? "RopeSpoolAnti" : "RopeSpool"));
-            }
-            else if (itemComponents[i].GetType() == typeof(VineShooter))
-            {
-                VineShooter effect = (VineShooter)itemComponents[i];
-                layout.Add(Block.Custom, Reach(effect.maxLength / (5f / 3f)));
-            }
-            else if (itemComponents[i].GetType() == typeof(MagicBean))
-            {
-                MagicBean effect = (MagicBean)itemComponents[i];
-                layout.Add(Block.Custom, Reach(effect.plantPrefab.maxLength / 2f));
-            }
-            else if (itemComponents[i].GetType() == typeof(ShelfShroom))
-            {
-                Collect(effects, i, DescribeHealingShroom((ShelfShroom)itemComponents[i]));
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_MoraleBoost))
-            {
-                Action_MoraleBoost effect = (Action_MoraleBoost)itemComponents[i];
-                Collect(effects, i, EffectFormatter.Effect(effect.baselineStaminaBoost, "Extra Stamina"),
-                    Onset.Instant, "Extra Stamina", effect.baselineStaminaBoost);
-            }
-            else if (itemComponents[i].GetType() == typeof(Dynamite))
-            {
-                Dynamite effect = (Dynamite)itemComponents[i];
-                float injury = effect.explosionPrefab.GetComponent<AOE>().statusAmount;
-                Collect(effects, i, EffectFormatter.Effect(injury, "Injury"),
-                    Onset.Instant, "Injury", injury);
-            }
-            else if (itemComponents[i].GetType() == typeof(Action_Spawn))
-            {
-                Action_Spawn effect = (Action_Spawn)itemComponents[i];
-                if (effect.objectToSpawn.name.Equals("VFX_Sunscreen"))
-                {
-                    RemoveAfterSeconds duration = effect.objectToSpawn.transform.Find("AOE")
-                        .GetComponent<RemoveAfterSeconds>();
-                    Collect(effects, i,
-                        EffectColors.Neutral + EffectFormatter.Seconds(duration.seconds) + "</color>",
-                        Onset.OverTime);
-                }
-            }
-            else if (itemComponents[i].GetType() == typeof(Scorpion))
-            {
-                // Hiding the poison info when dead was tried and reverted: mob state does not
-                // update immediately on equip, which produced a visual bug.
-                Scorpion effect = (Scorpion)itemComponents[i];
-
-                // Scorpion.InflictAttack (verified against 2.1.a) does an instant
-                // AddStatus(Poison, 0.025) then a poison-over-time totalling
-                // max(0.5, (1 - statusSum) + 0.05). statusSum runs 0..1, so the over-time
-                // part spans 50 at full status to 105 at none - more damage the healthier
-                // you are. The instant 2.5 is folded in rather than shown separately.
-                Collect(effects, i, EffectFormatter.Colored("50-105", "Poison")
-                    + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>",
-                    Onset.OverTime, "Poison", 1f);
-            }
-            // 'is' rather than an exact match: CactusBall derives from StickyItemComponent
-            // and is the only item carrying one in 2.1.a, so an exact check would read the
-            // base class and describe nothing at all. Same trap that lost
-            // Action_SuperJumpAmulet's affliction.
-            else if (itemComponents[i] is StickyItemComponent sticky)
-            {
-                // Cactus. addThornsToStuckPlayer is charged to whoever the cactus is stuck
-                // to - and CharacterData.currentItem's setter makes the item in your hand
-                // your currentStickyItem, so UpdateWeight charges you for it while you are
-                // merely holding it, not only after someone throws it at you. The number is
-                // the same on both readings, so one line says both.
-                //
-                // Thorn *increments*, not thorns: UpdateWeight does
-                // SetStatus(Thorns, 0.025 * increments) and this field is added straight to
-                // that count, unlike Action_AddOrRemoveThorns where one thorn is worth two
-                // increments. Custom rather than Effects for the same reason as the idol
-                // below - a cactus has no use-action for the line to be mistaken for.
-                //
-                // addWeightToStuckPlayer rides the same path and is deliberately unread: it
-                // would print a second Weight figure that the Weight section does not know
-                // about, and no item in 2.1.a is known to set it.
-                layout.Add(Block.Custom,
-                    EffectFormatter.Effect(sticky.addThornsToStuckPlayer * 0.025f, "Thorns"));
-            }
-            else if (itemComponents[i].GetType() == typeof(BingBongShieldWhileHolding))
-            {
-                // Ancient Idol - the one item in 2.1.a that does its work while merely held
-                // rather than when used. The component re-applies a two-second
-                // Affliction_BingBongShield every 1.5 seconds for as long as the idol is your
-                // current item, so neither number means anything on its own: the shield never
-                // lapses, and infinity is the honest amount of it.
-                //
-                // Coloured like any other figure with an icon beside it, which is what Big
-                // Lollipop already does with the same mark. Neutral is for a duration standing
-                // next to a figure, as on the healing amulet below; here the mark is the figure.
-                //
-                // Custom rather than Effects, even though the amulet's shield is an effect.
-                // Effects answers "what happens when you use this", and the idol is never used;
-                // filing it there would promise a shield on some action that does not exist.
-                // Nothing marks it as a held effect - the idol has no use-action to confuse it
-                // with.
-                layout.Add(Block.Custom, EffectFormatter.Colored(EffectFormatter.Infinity, "Shield"));
-            }
-            else if (itemComponents[i].GetType() == typeof(Peak.Action_HealingGem))
-            {
-                Peak.Action_HealingGem effect = (Peak.Action_HealingGem)itemComponents[i];
-
-                // Heals a shared budget across six statuses at once, so the amount is white
-                // rather than any one status colour, and the icons say which are eligible.
-                // Slashes, not spaces: maxHealing is one pool spread across all six, not
-                // an allowance for each. This is the only item in 2.1.a that works this way,
-                // which is exactly why the slash form is reserved for it.
-                // Ranked by the first status of its run, so the budget leads the amulet's
-                // three lines rather than sorting after the petrify it costs.
-                Collect(effects, i,
-                    EffectFormatter.SharedBudget(-effect.healingAffliction.maxHealing, HealAllStatuses),
-                    Onset.Instant, HealAllStatuses[0], -1f);
-
-                if (effect.invincibilityAffliction != null)
-                {
-                    Collect(effects, i, EffectColors.Neutral
-                        + EffectFormatter.Seconds(effect.invincibilityAffliction.totalTime) + "</color> "
-                        + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
-                        Onset.OverTime, "Shield", 1f);
-                }
-
-                // Petrify scales with how much healing was actually possible, clamped to
-                // this range, so a range is the honest thing to show.
-                Collect(effects, i, EffectColors.Get("Petrify") + "+"
-                    + EffectFormatter.WholePoints(effect.minPetrify)
-                    + "-" + EffectFormatter.WholePoints(effect.maxPetrify)
-                    + " " + StatusIcons.Tag("Petrify") + "</color>",
-                    Onset.Instant, "Petrify", 1f);
-            }
-            else if (itemComponents[i].GetType() == typeof(Peak.Action_CloneSelectedItem))
-            {
-                Peak.Action_CloneSelectedItem effect = (Peak.Action_CloneSelectedItem)itemComponents[i];
-                // Every part of this line was untagged, so all four glyphs rendered in
-                // TMP's default. The arrow is neutral like every other arrow; the item
-                // glyphs take the cream, which is what a figure belonging to no status wears.
-                string generic = EffectColors.White + StatusIcons.Tag("Item") + "</color>";
-
-                layout.Add(Block.Custom, generic
-                    + EffectColors.Neutral + EffectFormatter.Arrow + "</color>"
-                    + generic + generic);
-                // AddPetrify takes whole points on the 0-100 scale, unlike almost everything
-                // else here, so these are already display units. The two values are discrete
-                // - plain items versus mystical ones - so a slash, not a range.
-                Collect(effects, i, EffectColors.Get("Petrify") + "+"
-                    + EffectFormatter.Num(effect.petrify) + "/" + EffectFormatter.Num(effect.petrifyMystical)
-                    + " " + StatusIcons.Tag("Petrify") + "</color>",
-                    Onset.Instant, "Petrify", 1f);
-            }
-            // Amulets are matched with 'is' rather than an exact type check: they all derive
-            // from AmuletBase and each applies petrify through a different path.
-            else if (itemComponents[i] is Peak.Action_SuperJumpAmulet superJump)
-            {
-                // Action_SuperJumpAmulet derives from Action_ApplyAffliction and its
-                // RunAction calls base.RunAction() before charging petrify, so it carries a
-                // real affliction as well as a cost. The Action_ApplyAffliction branch above
-                // matches on exact type and so never sees a subclass - this is the only
-                // place that affliction is read.
-                Collect(effects, i, EffectFormatter.Affliction(superJump.affliction));
-                // AddStatus takes a 0-1 fraction like every other status, but petrify is
-                // floored to whole points on the way in - this read +7.5 where the game gives
-                // you 7.
-                if (superJump.petrifyPerUse != 0f)
-                {
-                    Collect(effects, i, EffectFormatter.Colored(
-                            "+" + EffectFormatter.WholePoints(superJump.petrifyPerUse), "Petrify"),
-                        Onset.Instant, "Petrify", superJump.petrifyPerUse);
-                }
-            }
-            // 'is' rather than an exact match: ItemCooking declares UpdateCookedBehavior and
-            // CookVisually virtual, so the game clearly anticipates subclasses even though
-            // 2.1.a ships none. An exact check would silently drop the hint the day one appears.
-            else if (itemComponents[i] is ItemCooking cooking)
-            {
-                layout.Add(Block.Cooking, CookingHint.Describe(cooking));
-            }
-
-            // Deliberately not handled any more, each for a reason worth keeping:
-            //   Action_ReduceUses   - the "{n} USES" label was dropped outright.
-            //   Action_WarpToBiome  - it does not warp you to a biome at all; it teleports
-            //                         you to wherever the thrown fungus lands, so the old
-            //                         "WARP TO <SEGMENT>" was wrong as well as wordy, and
-            //                         there is no symbol for the real behaviour yet.
-            //   CactusBall          - the throw-charge threshold has no agreed symbol; the
-            //                         thorns it inflicts still come through Action_AddOrRemoveThorns.
-            //   Action_SacrificeFriend - it kills whoever the dagger is *fed to*, never the
-            //                         holder. The dagger carries no Action_Consume, so there
-            //                         is no way to use it on yourself; the only path to
-            //                         RunAction is RitualDaggerFeedBehavior calling
-            //                         ConsumeDelayed once the item has changed hands. The
-            //                         "???" mark means "the worst thing happens to you", so
-            //                         it said the wrong thing here. There is no symbol yet
-            //                         for a death that lands on someone else.
         }
 
         EmitEffects(layout, effects);
         return layout.Render();
+    }
+
+    /// <summary>
+    /// Which method describes which component.
+    ///
+    /// This replaced a chain of thirty-one `if / else if` tests that each asked
+    /// `GetType() == typeof(T)`. That test is exact, so a **subclass matched nothing at
+    /// all** and the component was described by no one - silently, with no error and no log
+    /// line, just a shorter overlay. It had already cost real data twice:
+    /// `Action_SuperJumpAmulet` derives from `Action_ApplyAffliction` and its affliction was
+    /// read by nobody, and `CactusBall` derives from `StickyItemComponent`. `ScoutEffigy` and
+    /// `CheckpointConstructable` derive from `Constructable` and are the cases still standing.
+    ///
+    /// Swapping the tests for `is` would have been worse, not better: a Scout's Ambition is
+    /// both an `Action_SuperJumpAmulet` and an `Action_ApplyAffliction`, so whichever branch
+    /// sat higher in the file would have won. Correctness would have depended on the order
+    /// thirty-one branches happened to be written in, which nothing enforces and nobody can
+    /// see.
+    ///
+    /// Looking the type up and walking to its base settles both. The most derived entry wins
+    /// because it is found first, source order means nothing, and a subclass with no entry of
+    /// its own inherits its base's description rather than vanishing.
+    ///
+    /// Deliberately absent, each for a reason worth keeping:
+    ///
+    /// <list type="bullet">
+    /// <item><c>Action_ReduceUses</c> - the "{n} USES" label was dropped outright.</item>
+    /// <item><c>Action_WarpToBiome</c> - it does not warp you to a biome at all; it teleports
+    /// you to wherever the thrown fungus lands, so the old "WARP TO &lt;SEGMENT&gt;" was wrong
+    /// as well as wordy, and there is no symbol for the real behaviour yet.</item>
+    /// <item><c>CactusBall</c> - the throw-charge threshold has no agreed symbol. The thorns
+    /// it inflicts come through <c>StickyItemComponent</c>, which it derives from - and which
+    /// it reaches by the base walk described above.</item>
+    /// <item><c>Action_SacrificeFriend</c> - it kills whoever the dagger is *fed to*, never
+    /// the holder. The dagger carries no <c>Action_Consume</c>, so there is no way to use it
+    /// on yourself; the only path to RunAction is <c>RitualDaggerFeedBehavior</c> calling
+    /// ConsumeDelayed once the item has changed hands. The "???" mark means "the worst thing
+    /// happens to you", so it said the wrong thing here, and there is no symbol yet for a
+    /// death that lands on someone else.</item>
+    /// </list>
+    /// </summary>
+    private static readonly Dictionary<Type, Action<Component, Parts>> Handlers = new()
+    {
+        { typeof(Action_RestoreHunger), DescribeRestoreHunger },
+        { typeof(Action_GiveExtraStamina), DescribeGiveExtraStamina },
+        { typeof(Action_InflictPoison), DescribeInflictPoison },
+        { typeof(Action_AddOrRemoveThorns), DescribeAddOrRemoveThorns },
+        { typeof(Action_ModifyStatus), DescribeModifyStatus },
+        { typeof(Action_ApplyAffliction), DescribeApplyAffliction },
+        { typeof(Action_Numb), DescribeNumb },
+        { typeof(Action_Die), DescribeDie },
+        { typeof(Peak.RitualDaggerFeedBehavior), DescribeRitualDaggerFeedBehavior },
+        { typeof(Action_RandomMushroomEffect), DescribeRandomMushroomEffect },
+        { typeof(Action_ClearAllStatus), DescribeClearAllStatus },
+        { typeof(Action_ApplyMassAffliction), DescribeApplyMassAffliction },
+        { typeof(Action_RaycastDart), DescribeRaycastDart },
+        { typeof(Lantern), DescribeLanternItem },
+        { typeof(Constructable), DescribeConstructable },
+        { typeof(RopeShooter), DescribeRopeShooter },
+        { typeof(VineShooter), DescribeVineShooter },
+        { typeof(MagicBean), DescribeMagicBean },
+        { typeof(ShelfShroom), DescribeShelfShroom },
+        { typeof(Action_MoraleBoost), DescribeMoraleBoost },
+        { typeof(Dynamite), DescribeDynamite },
+        { typeof(Action_Spawn), DescribeSpawn },
+        { typeof(Scorpion), DescribeScorpion },
+        { typeof(StickyItemComponent), DescribeStickyItemComponent },
+        { typeof(BingBongShieldWhileHolding), DescribeBingBongShieldWhileHolding },
+        { typeof(Peak.Action_HealingGem), DescribeHealingGem },
+        { typeof(Peak.Action_CloneSelectedItem), DescribeCloneSelectedItem },
+        { typeof(Peak.Action_SuperJumpAmulet), DescribeSuperJumpAmulet },
+        { typeof(ItemCooking), DescribeItemCooking },
+    };
+
+    /// <summary>
+    /// Cached answers from <see cref="Handlers"/>, including the misses. Build runs on every
+    /// equip and on the poll, and most components on an item - the rigidbody, the photon
+    /// view, the particles - will never have a handler; walking their base chain to find that
+    /// out again each time is work with a known answer.
+    /// </summary>
+    private static readonly Dictionary<Type, Action<Component, Parts>?> Resolved = new();
+
+    /// <summary>
+    /// The handler for a component's own type, or the nearest one above it. Null where
+    /// nothing in the chain is described, which is the common case.
+    /// </summary>
+    private static Action<Component, Parts>? HandlerFor(Type type)
+    {
+        if (Resolved.TryGetValue(type, out Action<Component, Parts>? cached))
+        {
+            return cached;
+        }
+
+        Action<Component, Parts>? found = null;
+        for (Type? current = type; current != null; current = current.BaseType)
+        {
+            if (Handlers.TryGetValue(current, out Action<Component, Parts>? handler))
+            {
+                found = handler;
+                break;
+            }
+        }
+
+        Resolved[type] = found;
+        return found;
+    }
+
+    /// <summary>
+    /// The state one description is assembled into, handed to every handler so none of them
+    /// has to know where its line ends up.
+    /// </summary>
+    private sealed class Parts
+    {
+        internal Parts(DescriptionLayout layout, List<EffectLine> effects, GameObject item,
+            bool consumable)
+        {
+            Layout = layout;
+            Effects = effects;
+            Item = item;
+            Consumable = consumable;
+        }
+
+        internal DescriptionLayout Layout { get; }
+
+        internal List<EffectLine> Effects { get; }
+
+        /// <summary>The item itself, for the handful of branches that read its children.</summary>
+        internal GameObject Item { get; }
+
+        /// <summary>
+        /// Whether the item can be eaten at all. An action flagged OnConsumed never runs on an
+        /// item with no Action_Consume, and cooking adds an Action_GiveExtraStamina to
+        /// anything - a cooked Scout's Ambition was advertising stamina it can never hand out.
+        /// </summary>
+        internal bool Consumable { get; }
+
+        /// <summary>
+        /// Index of the component being described, so <see cref="EffectOrder"/> has a stable
+        /// last tiebreak.
+        /// </summary>
+        internal int Source { get; set; }
     }
 
     /// <summary>
@@ -601,6 +361,391 @@ internal static class ItemDescriptionBuilder
         return lines;
     }
 
+    private static void DescribeRestoreHunger(Component component, Parts parts)
+    {
+        Action_RestoreHunger effect = (Action_RestoreHunger)component;
+        if (parts.Consumable || !effect.OnConsumed)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.restorationAmount * -1f, "Hunger"),
+                Onset.Instant, "Hunger", effect.restorationAmount * -1f);
+        }
+    }
+    private static void DescribeGiveExtraStamina(Component component, Parts parts)
+    {
+        Action_GiveExtraStamina effect = (Action_GiveExtraStamina)component;
+        if (parts.Consumable || !effect.OnConsumed)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.amount, "Extra Stamina"),
+                Onset.Instant, "Extra Stamina", effect.amount);
+        }
+    }
+    private static void DescribeInflictPoison(Component component, Parts parts)
+    {
+        // The delay used to be spelled out as "AFTER 10s,". Dropped: the "/ 8s"
+        // suffix already says this is spread over time, and the lead-in was the
+        // only English on an otherwise symbolic line.
+        Action_InflictPoison effect = (Action_InflictPoison)component;
+        Collect(parts.Effects, parts.Source,
+            EffectFormatter.OverTime(effect.poisonPerSecond * effect.inflictionTime,
+                effect.inflictionTime, "Poison"),
+            Onset.OverTime, "Poison", effect.poisonPerSecond);
+    }
+    private static void DescribeAddOrRemoveThorns(Component component, Parts parts)
+    {
+        Action_AddOrRemoveThorns effect = (Action_AddOrRemoveThorns)component;
+        // UpdateWeight sets Thorns to 0.025 per *increment* returned by
+        // GetTotalThornStatusIncrements, and in-game testing on Prickleberry shows a
+        // thorn is worth two of those - 2 thorns read as 10, not 5. So 0.05 per thorn.
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns"),
+            Onset.Instant, "Thorns", effect.thornCount * 0.05f);
+    }
+    private static void DescribeModifyStatus(Component component, Parts parts)
+    {
+        Action_ModifyStatus effect = (Action_ModifyStatus)component;
+        if (parts.Consumable || !effect.OnConsumed)
+        {
+            Collect(parts.Effects, parts.Source,
+                EffectFormatter.Effect(effect.changeAmount, effect.statusType.ToString()),
+                Onset.Instant, effect.statusType.ToString(), effect.changeAmount);
+
+            // CharacterAfflictions.SubtractStatus takes the same amount off Spores
+            // whenever Poison is reduced deliberately:
+            //
+            //   if (statusType == Poison && !decreasedNaturally && character.IsLocal)
+            //       SubtractStatus(Spores, amount);
+            //
+            // So every poison cure is silently a spores cure of equal size. It is
+            // one-way - adding poison adds no spores - and it does not apply to the
+            // passive per-second decay. First Aid Kit, Antidote and Medicinal Root
+            // all cure spores through this and nothing else; the wiki was right and
+            // the components alone do not show it.
+            if (effect.statusType == CharacterAfflictions.STATUSTYPE.Poison && effect.changeAmount < 0f)
+            {
+                Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.changeAmount, "Spores"),
+                    Onset.Instant, "Spores", effect.changeAmount);
+            }
+        }
+    }
+    private static void DescribeApplyAffliction(Component component, Parts parts)
+    {
+        Action_ApplyAffliction effect = (Action_ApplyAffliction)component;
+        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.affliction));
+    }
+    private static void DescribeNumb(Component component, Parts parts)
+    {
+        // Mandrake. Numbness hides your stamina bar, which is the whole reason to
+        // cook one first - and the only icon in the mod that had to be shipped
+        // rather than scraped, because numbness is not a STATUSTYPE.
+        Action_Numb effect = (Action_Numb)component;
+        Collect(parts.Effects, parts.Source, EffectFormatter.Colored(EffectFormatter.Seconds(effect.numbAmount), "Numb"),
+            Onset.OverTime, "Numb", 1f);
+    }
+    private static void DescribeDie(Component component, Parts parts)
+    {
+        // Cursed Skull. Nothing else in the game does this, and no number describes
+        // it - "the worst thing" is the whole message, so it leads in the Custom
+        // section above everything the item gives everyone else.
+        parts.Layout.Add(Block.Custom, EffectColors.Negative + "???</color>");
+    }
+    private static void DescribeRitualDaggerFeedBehavior(Component component, Parts parts)
+    {
+        // The other half of the Ritual Dagger, and the reason the wiki lists effects
+        // the item does not carry: RPC_RitualDaggerBuff runs on every client and
+        // skips only the character who was fed the dagger, so everybody else in the
+        // lobby - the feeder included - is healed and handed stamina.
+        //
+        // This is not reachable as an ItemAction. IExtraFeedBehavior is its own
+        // hook, called when one player feeds an item to another, and
+        // RitualDaggerFeedBehavior is the only thing in 2.1.a that implements it.
+        Peak.RitualDaggerFeedBehavior effect = (Peak.RitualDaggerFeedBehavior)component;
+
+        // ClearAllStatus() with no arguments, so curse and petrify are spared.
+        Collect(parts.Effects, parts.Source, EffectFormatter.ClearedStatuses(true, null));
+
+        // AddExtraStamina takes the same 0-1 fraction as a status.
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.bonusStamina, "Extra Stamina"),
+            Onset.Instant, "Extra Stamina", effect.bonusStamina);
+
+        if (effect.infiniteStaminaTime > 0f)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.InfiniteStamina(effect.infiniteStaminaTime),
+                Onset.OverTime, "Extra Stamina", 1f);
+        }
+    }
+    private static void DescribeRandomMushroomEffect(Component component, Parts parts)
+    {
+        Collect(parts.Effects, parts.Source, DescribeMushroom((Action_RandomMushroomEffect)component));
+    }
+    private static void DescribeClearAllStatus(Component component, Parts parts)
+    {
+        Action_ClearAllStatus effect = (Action_ClearAllStatus)component;
+        Collect(parts.Effects, parts.Source,
+            EffectFormatter.ClearedStatuses(effect.excludeCurse, effect.otherExclusions));
+    }
+    private static void DescribeApplyMassAffliction(Component component, Parts parts)
+    {
+        // The "NEARBY PLAYERS WILL RECEIVE:" header is gone. Nothing replaces it -
+        // the effects speak for themselves, and a header was a whole line of English
+        // for a distinction no item ever needs stated twice.
+        Action_ApplyMassAffliction effect = (Action_ApplyMassAffliction)component;
+        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.affliction));
+        for (int j = 0; j < effect.extraAfflictions.Length; j++)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.extraAfflictions[j]));
+        }
+    }
+    private static void DescribeRaycastDart(Component component, Parts parts)
+    {
+        Action_RaycastDart effect = (Action_RaycastDart)component;
+        for (int j = 0; j < effect.afflictionsOnHit.Length; j++)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.afflictionsOnHit[j]));
+        }
+    }
+    private static void DescribeLanternItem(Component component, Parts parts)
+    {
+        Collect(parts.Effects, parts.Source, DescribeLantern(parts.Item));
+    }
+    private static void DescribeConstructable(Component component, Parts parts)
+    {
+        // Whether it builds something you can cook on, asked of the thing itself rather
+        // than of its name. This used to require the prefab be called
+        // "PortableStovetop_Placed", which said nothing a Campfire component does not, and
+        // would have gone quiet the day the prefab was renamed.
+        //
+        // Constructable has two subclasses - ScoutEffigy and CheckpointConstructable - which
+        // the base walk now brings here. Neither builds a campfire, so neither says anything,
+        // and that is the right answer rather than a lucky one.
+        Constructable effect = (Constructable)component;
+        Campfire? campfire = effect.constructedPrefab == null
+            ? null
+            : effect.constructedPrefab.GetComponent<Campfire>();
+        if (campfire != null)
+        {
+            parts.Layout.Add(Block.Custom,
+                EffectColors.Neutral + EffectFormatter.Seconds(campfire.burnsFor) + "</color> "
+                + EffectColors.Get("Cook") + StatusIcons.Tag("Cook") + "</color>");
+        }
+    }
+    private static void DescribeRopeShooter(Component component, Parts parts)
+    {
+        // Two different distances, and the old single line conflated them. How far
+        // the cannon shoots is a raycast in Unity units; how much rope that leaves is
+        // a segment count. They were both being read off maxLength, which was only
+        // ever right by coincidence - maxLength is 30 units and length is 30
+        // segments, so dividing the wrong field by four still landed on 7.5.
+        RopeShooter effect = (RopeShooter)component;
+
+        // The anti-rope cannon shares this component with the ordinary one and has no
+        // flag of its own; what marks it is Antigrav, which makes the item float
+        // where it lies. A plain rope cannon has no reason to carry that, and the
+        // alternative was reading Rope.antigrav two prefabs deep through
+        // ropeAnchorWithRopePref.
+        bool anti = parts.Item.GetComponent<Antigrav>() != null;
+
+        parts.Layout.Add(Block.Custom, EffectFormatter.Colored(
+            EffectFormatter.PeakMetres(effect.maxLength),
+            anti ? "RopeCannonAnti" : "RopeCannon"));
+        parts.Layout.Add(Block.Custom, EffectFormatter.Colored(
+            EffectFormatter.Metres(Rope.GetLengthInMeters(effect.length)),
+            anti ? "RopeSpoolAnti" : "RopeSpool"));
+    }
+    private static void DescribeVineShooter(Component component, Parts parts)
+    {
+        VineShooter effect = (VineShooter)component;
+        parts.Layout.Add(Block.Custom, Reach(effect.maxLength / (5f / 3f)));
+    }
+    private static void DescribeMagicBean(Component component, Parts parts)
+    {
+        MagicBean effect = (MagicBean)component;
+        parts.Layout.Add(Block.Custom, Reach(effect.plantPrefab.maxLength / 2f));
+    }
+    private static void DescribeShelfShroom(Component component, Parts parts)
+    {
+        Collect(parts.Effects, parts.Source, DescribeHealingShroom((ShelfShroom)component));
+    }
+    private static void DescribeMoraleBoost(Component component, Parts parts)
+    {
+        Action_MoraleBoost effect = (Action_MoraleBoost)component;
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.baselineStaminaBoost, "Extra Stamina"),
+            Onset.Instant, "Extra Stamina", effect.baselineStaminaBoost);
+    }
+    private static void DescribeDynamite(Component component, Parts parts)
+    {
+        Dynamite effect = (Dynamite)component;
+        float injury = effect.explosionPrefab.GetComponent<AOE>().statusAmount;
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(injury, "Injury"),
+            Onset.Instant, "Injury", injury);
+    }
+    private static void DescribeSpawn(Component component, Parts parts)
+    {
+        // Everything sunscreen does lives on the thing it sprays: the bottle carries only
+        // Action_ReduceUses and this. The spawned prefab is walked for what it holds rather
+        // than reached through the names it used to be - "VFX_Sunscreen" with an "AOE" child,
+        // where Transform.Find returned null straight into a GetComponent the day either
+        // moved.
+        //
+        // An AOE flagged hasAffliction hands its affliction to whoever it catches, which is
+        // where the protection and its duration actually are.
+        //
+        // The cloud's own lifetime is deliberately not shown. It was tried - a RemoveAfterSeconds
+        // on the spawned prefab, four seconds, beside the ninety the protection lasts - and two
+        // durations on one item read as a puzzle rather than as information. How long the spray
+        // hangs in the air is not something a player acts on; how long they are covered is.
+        Action_Spawn effect = (Action_Spawn)component;
+        if (effect.objectToSpawn == null)
+        {
+            return;
+        }
+
+        foreach (AOE aoe in effect.objectToSpawn.GetComponentsInChildren<AOE>(true))
+        {
+            if (aoe.hasAffliction && aoe.affliction != null)
+            {
+                Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(aoe.affliction));
+            }
+        }
+    }
+    private static void DescribeScorpion(Component component, Parts parts)
+    {
+        // Hiding the poison info when dead was tried and reverted: mob state does not
+        // update immediately on equip, which produced a visual bug.
+        Scorpion effect = (Scorpion)component;
+
+        // Scorpion.InflictAttack (verified against 2.1.a) does an instant
+        // AddStatus(Poison, 0.025) then a poison-over-time totalling
+        // max(0.5, (1 - statusSum) + 0.05). statusSum runs 0..1, so the over-time
+        // part spans 50 at full status to 105 at none - more damage the healthier
+        // you are. The instant 2.5 is folded in rather than shown separately.
+        Collect(parts.Effects, parts.Source, EffectFormatter.Colored("50-105", "Poison")
+            + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>",
+            Onset.OverTime, "Poison", 1f);
+    }
+    // 'is' rather than an exact match: CactusBall derives from StickyItemComponent
+    // and is the only item carrying one in 2.1.a, so an exact check would read the
+    // base class and describe nothing at all. Same trap that lost
+    // Action_SuperJumpAmulet's affliction.
+    private static void DescribeStickyItemComponent(Component component, Parts parts)
+    {
+        StickyItemComponent sticky = (StickyItemComponent)component;
+        // Cactus. addThornsToStuckPlayer is charged to whoever the cactus is stuck
+        // to - and CharacterData.currentItem's setter makes the item in your hand
+        // your currentStickyItem, so UpdateWeight charges you for it while you are
+        // merely holding it, not only after someone throws it at you. The number is
+        // the same on both readings, so one line says both.
+        //
+        // Thorn *increments*, not thorns: UpdateWeight does
+        // SetStatus(Thorns, 0.025 * increments) and this field is added straight to
+        // that count, unlike Action_AddOrRemoveThorns where one thorn is worth two
+        // increments. Custom rather than Effects for the same reason as the idol
+        // below - a cactus has no use-action for the line to be mistaken for.
+        //
+        // addWeightToStuckPlayer rides the same path and is deliberately unread: it
+        // would print a second Weight figure that the Weight section does not know
+        // about, and no item in 2.1.a is known to set it.
+        parts.Layout.Add(Block.Custom,
+            EffectFormatter.Effect(sticky.addThornsToStuckPlayer * 0.025f, "Thorns"));
+    }
+    private static void DescribeBingBongShieldWhileHolding(Component component, Parts parts)
+    {
+        // Ancient Idol - the one item in 2.1.a that does its work while merely held
+        // rather than when used. The component re-applies a two-second
+        // Affliction_BingBongShield every 1.5 seconds for as long as the idol is your
+        // current item, so neither number means anything on its own: the shield never
+        // lapses, and infinity is the honest amount of it.
+        //
+        // Coloured like any other figure with an icon beside it, which is what Big
+        // Lollipop already does with the same mark. Neutral is for a duration standing
+        // next to a figure, as on the healing amulet below; here the mark is the figure.
+        //
+        // Custom rather than Effects, even though the amulet's shield is an effect.
+        // Effects answers "what happens when you use this", and the idol is never used;
+        // filing it there would promise a shield on some action that does not exist.
+        // Nothing marks it as a held effect - the idol has no use-action to confuse it
+        // with.
+        parts.Layout.Add(Block.Custom, EffectFormatter.Colored(EffectFormatter.Infinity, "Shield"));
+    }
+    private static void DescribeHealingGem(Component component, Parts parts)
+    {
+        Peak.Action_HealingGem effect = (Peak.Action_HealingGem)component;
+
+        // Heals a shared budget across six statuses at once, so the amount is white
+        // rather than any one status colour, and the icons say which are eligible.
+        // Slashes, not spaces: maxHealing is one pool spread across all six, not
+        // an allowance for each. This is the only item in 2.1.a that works this way,
+        // which is exactly why the slash form is reserved for it.
+        // Ranked by the first status of its run, so the budget leads the amulet's
+        // three lines rather than sorting after the petrify it costs.
+        Collect(parts.Effects, parts.Source,
+            EffectFormatter.SharedBudget(-effect.healingAffliction.maxHealing, HealAllStatuses),
+            Onset.Instant, HealAllStatuses[0], -1f);
+
+        if (effect.invincibilityAffliction != null)
+        {
+            Collect(parts.Effects, parts.Source, EffectColors.Neutral
+                + EffectFormatter.Seconds(effect.invincibilityAffliction.totalTime) + "</color> "
+                + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
+                Onset.OverTime, "Shield", 1f);
+        }
+
+        // Petrify scales with how much healing was actually possible, clamped to
+        // this range, so a range is the honest thing to show.
+        Collect(parts.Effects, parts.Source, EffectColors.Get("Petrify") + "+"
+            + EffectFormatter.WholePoints(effect.minPetrify)
+            + "-" + EffectFormatter.WholePoints(effect.maxPetrify)
+            + " " + StatusIcons.Tag("Petrify") + "</color>",
+            Onset.Instant, "Petrify", 1f);
+    }
+    private static void DescribeCloneSelectedItem(Component component, Parts parts)
+    {
+        Peak.Action_CloneSelectedItem effect = (Peak.Action_CloneSelectedItem)component;
+        // Every part of this line was untagged, so all four glyphs rendered in
+        // TMP's default. The arrow is neutral like every other arrow; the item
+        // glyphs take the cream, which is what a figure belonging to no status wears.
+        string generic = EffectColors.White + StatusIcons.Tag("Item") + "</color>";
+
+        parts.Layout.Add(Block.Custom, generic
+            + EffectColors.Neutral + EffectFormatter.Arrow + "</color>"
+            + generic + generic);
+        // AddPetrify takes whole points on the 0-100 scale, unlike almost everything
+        // else here, so these are already display units. The two values are discrete
+        // - plain items versus mystical ones - so a slash, not a range.
+        Collect(parts.Effects, parts.Source, EffectColors.Get("Petrify") + "+"
+            + EffectFormatter.Num(effect.petrify) + "/" + EffectFormatter.Num(effect.petrifyMystical)
+            + " " + StatusIcons.Tag("Petrify") + "</color>",
+            Onset.Instant, "Petrify", 1f);
+    }
+    // Amulets are matched with 'is' rather than an exact type check: they all derive
+    // from AmuletBase and each applies petrify through a different path.
+    private static void DescribeSuperJumpAmulet(Component component, Parts parts)
+    {
+        Peak.Action_SuperJumpAmulet superJump = (Peak.Action_SuperJumpAmulet)component;
+        // Action_SuperJumpAmulet derives from Action_ApplyAffliction and its
+        // RunAction calls base.RunAction() before charging petrify, so it carries a
+        // real affliction as well as a cost. The Action_ApplyAffliction branch above
+        // matches on exact type and so never sees a subclass - this is the only
+        // place that affliction is read.
+        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(superJump.affliction));
+        // AddStatus takes a 0-1 fraction like every other status, but petrify is
+        // floored to whole points on the way in - this read +7.5 where the game gives
+        // you 7.
+        if (superJump.petrifyPerUse != 0f)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.Colored(
+                    "+" + EffectFormatter.WholePoints(superJump.petrifyPerUse), "Petrify"),
+                Onset.Instant, "Petrify", superJump.petrifyPerUse);
+        }
+    }
+    // 'is' rather than an exact match: ItemCooking declares UpdateCookedBehavior and
+    // CookVisually virtual, so the game clearly anticipates subclasses even though
+    // 2.1.a ships none. An exact check would silently drop the hint the day one appears.
+    private static void DescribeItemCooking(Component component, Parts parts)
+    {
+        ItemCooking cooking = (ItemCooking)component;
+        parts.Layout.Add(Block.Cooking, CookingHint.Describe(cooking));
+    }
+
+
     /// <summary>A distance in metres, in the neutral colour. No unit space: "12.5m".</summary>
     private static string Reach(float metres) =>
         EffectColors.Neutral + EffectFormatter.Metres(metres) + "</color>";
@@ -608,22 +753,17 @@ internal static class ItemDescriptionBuilder
     /// <summary>
     /// A lit lantern warms whoever is near it. Stated per second rather than as a total over
     /// the fuel, so the figure means the same thing on a full lantern and a nearly-spent one.
+    ///
+    /// The field is found by walking the lantern for one, not by knowing that a Faerie
+    /// Lantern is called "Lantern_Faerie(Clone)" and keeps its heat at
+    /// "FaerieLantern/Light/Heat". That was four hardcoded names for two items, each of which
+    /// would have gone silent on a rename, and it could not describe a third lantern at all.
     /// </summary>
     private static List<EffectLine> DescribeLantern(GameObject itemGameObj)
     {
         List<EffectLine> lines = new();
 
-        string path = itemGameObj.name.Equals("Lantern_Faerie(Clone)")
-            ? "FaerieLantern/Light/Heat"
-            : itemGameObj.name.Equals("Lantern(Clone)") ? "GasLantern/Light/Heat" : null!;
-
-        if (path == null)
-        {
-            return lines;
-        }
-
-        Transform? heat = itemGameObj.transform.Find(path);
-        StatusField? effect = heat != null ? heat.GetComponent<StatusField>() : null;
+        StatusField? effect = itemGameObj.GetComponentInChildren<StatusField>(true);
         if (effect == null)
         {
             return lines;
