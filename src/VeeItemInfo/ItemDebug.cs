@@ -172,6 +172,7 @@ internal static class ItemDebug
         StickyItemComponent a => $" thorns={a.addThornsToStuckPlayer} weight={a.addWeightToStuckPlayer}"
             + $" throwCharge={a.throwChargeRequirement}",
         ShelfShroom a => BreaksInto(a),
+        Action_Spawn a => Spawns(a),
         RopeShooter a => $" shootRange={a.maxLength}u ropeSegments={a.length}"
             + $" ropeMetres={Rope.GetLengthInMeters(a.length)}",
         RopeSpool a => $" fuel={a.RopeFuel} startFuel={a.ropeStartFuel}"
@@ -208,6 +209,33 @@ internal static class ItemDebug
             + $" minGood={manager.minGoodEffects} minBad={manager.minBadEffects}"
             + $" effects=[{string.Join(", ", manager.mushroomEffects)}]"
             + $" stamAmts=[{string.Join(", ", manager.mushroomStamAmt ?? new int[0])}]";
+    }
+
+    /// <summary>
+    /// What an Action_Spawn puts into the world.
+    ///
+    /// Sunscreen carries nothing but Action_ReduceUses and Action_Spawn - the protection, its
+    /// duration and the cloud's lifetime are all on the thing it sprays - so a component list
+    /// of the item alone explains none of it.
+    /// </summary>
+    private static string Spawns(Action_Spawn action)
+    {
+        if (action.objectToSpawn == null)
+        {
+            return " spawns=<none>";
+        }
+
+        StringBuilder tree = new($" spawns={action.objectToSpawn.name}");
+        foreach (Component component in action.objectToSpawn.GetComponents(typeof(Component)))
+        {
+            if (component != null && !(component is Transform))
+            {
+                tree.Append(" | ").Append(component.GetType().Name).Append(PrefabValues(component));
+            }
+        }
+
+        Describe(tree, action.objectToSpawn.transform, MaxPrefabDepth);
+        return tree.ToString();
     }
 
     /// <summary>
@@ -272,6 +300,9 @@ internal static class ItemDebug
     private static string PrefabValues(Component component) => component switch
     {
         AOE a => $" {a.statusType}={a.statusAmount} range={a.range} minFactor={a.minFactor}"
+            + (a.hasAffliction && a.affliction != null
+                ? $" affliction={a.affliction.GetAfflictionType()} totalTime={a.affliction.totalTime}"
+                : "")
             + $" factorPow={a.factorPow} ignoreFactor={a.ignoreFactor}"
             + (a.addtlStatus != null && a.addtlStatus.Length > 0
                 ? $" addtl=[{string.Join(", ", a.addtlStatus)}]"
