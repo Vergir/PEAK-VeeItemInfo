@@ -59,6 +59,21 @@ internal static class StatusIcons
     /// their alignment for free.
     /// </summary>
     private const float IconScale = 0.85f;
+
+    /// <summary>
+    /// The longest side an icon is copied at, in pixels.
+    ///
+    /// Derived rather than picked. An icon draws at <see cref="IconScale"/> x Font Size, and
+    /// Font Size is capped at 72 by its config range, so 61 units is the largest the overlay
+    /// can ever ask for. Round that up to 64 and double it for a HUD canvas scaled up on a
+    /// high-DPI display.
+    ///
+    /// The game's own icons are 512x512, which is thirty times what a default 20pt line
+    /// needs, and packing them at that size cost a 4096x4096 atlas - 64 MB of texture for
+    /// twenty-five glyphs. Nothing about that was visible on screen.
+    /// </summary>
+    private const int MaxIconPixels = 128;
+
     private static int attempts;
     private static float nextAttempt;
 
@@ -436,7 +451,7 @@ internal static class StatusIcons
         {
             for (int i = 0; i < icons.Count; i++)
             {
-                copies[i] = MakeReadable(icons[i].Texture);
+                copies[i] = MakeReadable(icons[i].Texture, icons[i].Region);
                 tintable[i] = ShouldTint(copies[i]);
             }
 
@@ -471,20 +486,16 @@ internal static class StatusIcons
 
             for (int i = 0; i < icons.Count; i++)
             {
-                IconSource source = icons[i];
-                string name = source.Name;
+                string name = icons[i].Name;
                 Rect uv = uvs[i];
 
-                // PackTextures may shrink a texture to make it fit, so map the sprite's
-                // region through the same scale rather than assuming 1:1.
-                float packedWidth = uv.width * atlas.width;
-                float scale = packedWidth / copies[i].width;
-                Rect region = source.Region;
-
-                int x = Mathf.RoundToInt(uv.x * atlas.width + region.x * scale);
-                int y = Mathf.RoundToInt(uv.y * atlas.height + region.y * scale);
-                int w = Mathf.Max(1, Mathf.RoundToInt(region.width * scale));
-                int h = Mathf.Max(1, Mathf.RoundToInt(region.height * scale));
+                // The packed cell is the glyph. MakeReadable cropped each copy to its own
+                // sprite rect, so there is no sub-rect left to map, and PackTextures shrinking
+                // a texture to make it fit no longer needs accounting for either.
+                int x = Mathf.RoundToInt(uv.x * atlas.width);
+                int y = Mathf.RoundToInt(uv.y * atlas.height);
+                int w = Mathf.Max(1, Mathf.RoundToInt(uv.width * atlas.width));
+                int h = Mathf.Max(1, Mathf.RoundToInt(uv.height * atlas.height));
 
                 TMP_SpriteGlyph glyph = new TMP_SpriteGlyph
                 {
@@ -588,28 +599,74 @@ internal static class StatusIcons
         }
     }
 
-    /// <summary>Copies a texture through the GPU so its pixels can be read back.</summary>
-    private static Texture2D MakeReadable(Texture source)
+    /// <summary>
+    /// Copies one icon through the GPU so its pixels can be read back, cropped to
+    /// <paramref name="region"/> and shrunk to <see cref="MaxIconPixels"/> on its long side.
+    ///
+    /// Both of those ride along on the blit the readback already needed, so neither costs a
+    /// pass. The crop is what lets <see cref="BuildAtlas"/> treat a packed cell as the glyph
+    /// rect outright: the copy is the icon and nothing else, so there is no sub-rect left to
+    /// map through the packer's own scaling.
+    /// </summary>
+    private static Texture2D MakeReadable(Texture source, Rect region)
     {
-        RenderTexture temp = RenderTexture.GetTemporary(
-            source.width, source.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        int width = Mathf.Max(1, Mathf.RoundToInt(region.width));
+        int height = Mathf.Max(1, Mathf.RoundToInt(region.height));
+
+        float shrink = Mathf.Min(1f, MaxIconPixels / (float)Mathf.Max(width, height));
+        int targetWidth = Mathf.Max(1, Mathf.RoundToInt(width * shrink));
+        int targetHeight = Mathf.Max(1, Mathf.RoundToInt(height * shrink));
+
         RenderTexture previous = RenderTexture.active;
+        RenderTexture step = Temporary(width, height);
 
         try
         {
-            Graphics.Blit(source, temp);
-            RenderTexture.active = temp;
+            Graphics.Blit(source, step,
+                new Vector2(region.width / source.width, region.height / source.height),
+                new Vector2(region.x / source.width, region.y / source.height));
 
-            Texture2D readable = new Texture2D(source.width, source.height, TextureFormat.RGBA32, mipChain: false);
-            readable.ReadPixels(new Rect(0f, 0f, source.width, source.height), 0, 0);
+            // Halve repeatedly rather than dropping to the target in one blit. A bilinear
+            // tap reads four texels, so a 4x reduction taken in a single step would miss
+            // fifteen source pixels in every sixteen and alias the thin lines the status
+            // silhouettes are mostly made of.
+            while (step.width >= targetWidth * 2 && step.height >= targetHeight * 2)
+            {
+                step = Blit(step, step.width / 2, step.height / 2);
+            }
+
+            if (step.width != targetWidth || step.height != targetHeight)
+            {
+                step = Blit(step, targetWidth, targetHeight);
+            }
+
+            RenderTexture.active = step;
+
+            Texture2D readable = new Texture2D(targetWidth, targetHeight, TextureFormat.RGBA32, mipChain: false);
+            readable.ReadPixels(new Rect(0f, 0f, targetWidth, targetHeight), 0, 0);
             readable.Apply();
             return readable;
         }
         finally
         {
             RenderTexture.active = previous;
-            RenderTexture.ReleaseTemporary(temp);
+            RenderTexture.ReleaseTemporary(step);
         }
+    }
+
+    private static RenderTexture Temporary(int width, int height) =>
+        RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+
+    /// <summary>
+    /// Draws one temporary render texture into a smaller one and releases the original, so
+    /// the caller only ever holds the newest step of the chain.
+    /// </summary>
+    private static RenderTexture Blit(RenderTexture source, int width, int height)
+    {
+        RenderTexture destination = Temporary(width, height);
+        Graphics.Blit(source, destination);
+        RenderTexture.ReleaseTemporary(source);
+        return destination;
     }
 
     /// <summary>
