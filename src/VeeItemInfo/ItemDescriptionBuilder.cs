@@ -120,6 +120,13 @@ internal static class ItemDescriptionBuilder
     /// ConsumeDelayed once the item has changed hands. The "???" mark means "the worst thing
     /// happens to you", so it said the wrong thing here, and there is no symbol yet for a
     /// death that lands on someone else.</item>
+    /// <item><c>Action_ConsumeAndSpawn</c> - the four Berrynanas and nothing else in 2.1.a:
+    /// eating one leaves you holding its own coloured peel. Judged not worth a line.
+    /// **Not a gap** - the peel icons are packed regardless by
+    /// <c>StatusIcons.AddTransformationIcons</c>, which asks the components rather than
+    /// naming items, so what is decided here is what to *say*, not what is reachable. The
+    /// other half of that pair, <c>CookingBehavior_ReplaceItem</c> turning a cooked Frog into
+    /// FrogLegs, *is* wanted and belongs to the cooking hint.</item>
     /// </list>
     /// </summary>
     private static readonly Dictionary<Type, Action<Component, Parts>> Handlers = new()

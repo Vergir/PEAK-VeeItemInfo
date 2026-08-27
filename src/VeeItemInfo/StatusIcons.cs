@@ -202,6 +202,10 @@ internal static class StatusIcons
             icons.Add(IconSource.FromTexture("Float", floaty));
         }
 
+        // Every item that another item turns into. Added last, so a status keeps its key if
+        // an item ever shares the name.
+        AddTransformationIcons(icons, seen);
+
         // The one icon that has to be shipped. Numbness is not a STATUSTYPE and has no
         // BarAffliction, so there is nothing in the scene to scrape - see assets/NOTICE.md
         // for why this file is here and what its licensing is.
@@ -316,11 +320,83 @@ internal static class StatusIcons
     }
 
     /// <summary>
-    /// Looks up an item's icon by prefab name through the game's own item database. Used for
-    /// descriptions that need to show an item rather than a status.
+    /// Packs the icon of every item that another item turns into.
+    ///
+    /// Two fields in 2.1.a name a different item: <c>Action_ConsumeAndSpawn.itemToSpawn</c>,
+    /// which is how each Berrynana hands you its own coloured peel, and
+    /// <c>CookingBehavior_ReplaceItem.replaceWithItem</c>, which is how a cooked Frog becomes
+    /// FrogLegs. A line saying "this becomes that" has to show <i>that</i>, and which item it
+    /// is comes off the field rather than from anything we choose here.
+    ///
+    /// So the set is collected by asking the prefabs, not by listing the five names 2.1.a
+    /// happens to have. Naming them would go stale silently, and it would also be a
+    /// judgement about which transformations matter that these two fields already make.
     /// </summary>
+    private static void AddTransformationIcons(List<IconSource> icons, HashSet<string> seen)
+    {
+        foreach (Item item in AllItems())
+        {
+            // A prefab lives in the asset database rather than a scene, so nothing on one is
+            // active in any hierarchy. includeInactive is mandatory, not a precaution - the
+            // no-argument overload returns nothing at all.
+            foreach (Action_ConsumeAndSpawn spawn in item.GetComponentsInChildren<Action_ConsumeAndSpawn>(true))
+            {
+                AddItemIcon(icons, seen, spawn.itemToSpawn);
+            }
+
+            foreach (ItemCooking cooking in item.GetComponentsInChildren<ItemCooking>(true))
+            {
+                foreach (AdditionalCookingBehavior behaviour in cooking.additionalCookingBehaviors
+                    ?? Array.Empty<AdditionalCookingBehavior>())
+                {
+                    if (behaviour is CookingBehavior_ReplaceItem replace)
+                    {
+                        AddItemIcon(icons, seen, replace.replaceWithItem);
+                    }
+                }
+            }
+        }
+    }
+
     /// <summary>
-    /// Registers one item's icon under a key of our own, if the database has it.
+    /// The sprite key an item's own icon is registered under. Spaces come out because a
+    /// sprite name containing one breaks the rich text tag, exactly as Extra Stamina is
+    /// registered as ExtraStamina.
+    /// </summary>
+    private static string KeyFor(Item item) => item.name.Replace(" ", "");
+
+    /// <summary>
+    /// A tag for an item's own icon, falling back to the generic item glyph rather than to
+    /// the item's name.
+    ///
+    /// <see cref="Tag"/>'s fallback is right for a status, whose name is a word a player
+    /// reads on the HUD. An item's is a prefab name - "Berrynana Peel Pink Variant" - which
+    /// is both English and internal. The generic glyph already means "some item", which is
+    /// the honest thing to say when the real one could not be packed.
+    /// </summary>
+    internal static string ItemTag(Item item) =>
+        Tags.TryGetValue(KeyFor(item), out string? tag) ? tag : Tag("Item");
+
+    /// <summary>Registers one item's own icon under its own key.</summary>
+    private static void AddItemIcon(List<IconSource> icons, HashSet<string> seen, Item? item)
+    {
+        if (item == null || item.UIData == null)
+        {
+            return;
+        }
+
+        Texture2D? icon = item.UIData.GetIcon();
+        string key = KeyFor(item);
+        if (icon != null && seen.Add(key))
+        {
+            icons.Add(IconSource.FromTexture(key, icon));
+        }
+    }
+
+    /// <summary>
+    /// Registers one item's icon under a key of our own, for the handful used as symbols for
+    /// something other than themselves - the rope pair labelling two distances, the balloon
+    /// standing for low gravity, BingBong standing for "some item".
     /// </summary>
     private static void AddItemIcon(List<IconSource> icons, HashSet<string> seen,
         string key, string itemName)
@@ -339,20 +415,11 @@ internal static class StatusIcons
     /// </summary>
     private static Texture2D? FindItemIconExact(string itemName)
     {
-        foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
+        foreach (Item entry in AllItems())
         {
-            if (database.itemLookup == null)
+            if (entry.name.Equals(itemName, StringComparison.OrdinalIgnoreCase))
             {
-                continue;
-            }
-
-            foreach (Item entry in database.itemLookup.Values)
-            {
-                if (entry != null && entry.UIData != null
-                    && entry.name.Equals(itemName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return entry.UIData.GetIcon();
-                }
+                return entry.UIData.GetIcon();
             }
         }
 
@@ -361,8 +428,26 @@ internal static class StatusIcons
 
     private static Texture2D? FindItemIcon(string nameContains)
     {
-        // Resources rather than a singleton accessor: the database is a loaded
-        // ScriptableObject either way, and this needs no guess at the accessor's shape.
+        foreach (Item entry in AllItems())
+        {
+            if (entry.name.IndexOf(nameContains, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return entry.UIData.GetIcon();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Every item the game knows about, skipping any that carries no UI data to read an icon
+    /// from.
+    ///
+    /// Resources rather than a singleton accessor: the database is a loaded ScriptableObject
+    /// either way, and this needs no guess at the accessor's shape.
+    /// </summary>
+    private static IEnumerable<Item> AllItems()
+    {
         foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
         {
             if (database.itemLookup == null)
@@ -372,15 +457,12 @@ internal static class StatusIcons
 
             foreach (Item entry in database.itemLookup.Values)
             {
-                if (entry != null && entry.UIData != null
-                    && entry.name.IndexOf(nameContains, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (entry != null && entry.UIData != null)
                 {
-                    return entry.UIData.GetIcon();
+                    yield return entry;
                 }
             }
         }
-
-        return null;
     }
 
     /// <summary>
