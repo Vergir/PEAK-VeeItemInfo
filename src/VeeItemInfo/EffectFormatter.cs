@@ -76,8 +76,20 @@ internal static class EffectFormatter
     ///
     /// Not every status, and not the display order's own list - the two were one array
     /// until this split, and it was quietly lying. **Thorns was in the old list**, so every
-    /// clear-all item in the game - Napberry, Cure-All, Pandora's Lunchbox, the Blowgun dart -
-    /// promised to strip 100 thorns that it has never once removed.
+    /// clear-all item in the game promised to strip 100 thorns it has never once removed.
+    ///
+    /// <b>Who consults this</b>, since a derived list makes that unanswerable from the source:
+    /// <c>Action_ClearAllStatus</c>, which in 2.1.a is on <b>Napberry</b> and the <b>Book of
+    /// Bones</b> and nothing else; <c>RitualDaggerFeedBehavior</c>, which clears whoever it is
+    /// fed to; and the <c>Chaos</c> affliction below. A walk of all 194 item prefabs settled
+    /// the first of those - an older note here named Cure-All, Pandora's Lunchbox and the
+    /// Blowgun dart as clear-all items and all three were wrong. Cure-All in particular carries
+    /// <c>Action_AddOrRemoveThorns</c> with a count of <c>-5</c>, so it really does take thorns
+    /// off, which is presumably how it got mistaken for one.
+    ///
+    /// Napberry's own <c>otherExclusions</c> is <c>[Crab]</c>, which <c>StatusIsCurable</c>
+    /// already refuses - a prefab restating a rule the game enforces anyway, and a reason to
+    /// ask the game rather than trust the list beside it.
     ///
     /// <b>Asked of the game rather than listed.</b> <c>ClearAllStatus</c> keeps no list: it
     /// walks every <c>STATUSTYPE</c> and asks <c>StatusIsCurable</c>, which refuses Crab,
