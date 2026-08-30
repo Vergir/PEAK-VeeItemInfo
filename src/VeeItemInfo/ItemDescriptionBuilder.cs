@@ -50,9 +50,16 @@ internal static class ItemDescriptionBuilder
 
         List<EffectLine> effects = new();
 
-        float weight = Ascents.itemWeightModifier > 0
-            ? (item.carryWeight + Ascents.itemWeightModifier) * 2.5f
-            : item.carryWeight * 2.5f;
+        // Item.CarryWeight, not the serialized carryWeight field: the property is what
+        // UpdateWeight adds up, and it applies the ascent modifier itself. This used to
+        // reimplement it as "carryWeight + itemWeightModifier when that is positive", which
+        // got the lighter-items setting wrong - a modifier of -1 makes CarryWeight zero
+        // outright rather than one less, so weightless items were still showing their weight.
+        //
+        // UpdateWeight then does SetStatus(Weight, STATUS_INCREMENT * total), so weight is a
+        // status fraction like any other and the display scaling belongs to the formatter.
+        // The 2.5 that used to be here was that same arithmetic already carried out.
+        float weight = item.CarryWeight * GameValues.StatusStep;
         // Weight is a property of the item, not a change to your status, so it carries no
         // sign - just the number and the icon.
         layout.Add(Block.Weight, EffectFormatter.Plain(weight, "Weight"));

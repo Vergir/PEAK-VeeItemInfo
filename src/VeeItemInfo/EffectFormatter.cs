@@ -45,9 +45,13 @@ internal static class EffectFormatter
     internal static string Token(float amount, string effect) =>
         Colored((amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect);
 
-    /// <summary>An unsigned amount and its icon, for values that have no direction.</summary>
+    /// <summary>
+    /// An unsigned amount and its icon, for values that have no direction. Takes a 0-1
+    /// fraction like every other formatter here - weight is a status the game sets through
+    /// SetStatus, so it is on the same scale as the rest and scales the same way.
+    /// </summary>
     internal static string Plain(float amount, string effect) =>
-        Colored(Num(amount), effect);
+        Colored(Scaled(amount), effect);
 
     /// <summary>
     /// A value and its status icon in the status colour. The icon sits inside the colour
