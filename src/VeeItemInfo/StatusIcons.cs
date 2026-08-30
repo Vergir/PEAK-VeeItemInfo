@@ -15,10 +15,14 @@ namespace VeeItemInfo;
 /// art means the icons always match the game's visual language, and there is nothing to
 /// ship or attribute.
 ///
-/// Each icon lives on its own 512x512 texture, and a sprite asset draws from exactly one
-/// texture. Chaining one asset per icon as fallbacks does not resolve reliably - TMP just
-/// renders its missing-sprite placeholder - so everything is packed into a single atlas
-/// first and the whole set becomes one asset.
+/// Each icon lives on its own texture, and a sprite asset draws from exactly one texture.
+/// Chaining one asset per icon as fallbacks does not resolve reliably - TMP just renders its
+/// missing-sprite placeholder - so everything is packed into a single atlas first and the
+/// whole set becomes one asset.
+///
+/// Those textures are 512 a side and the sprite rects inside them are neither square nor
+/// whole-numbered - Crab is 295x468, Curse is 435.85x494.85 at a fractional offset - so
+/// nothing here may assume a size or an alignment it has not read.
 ///
 /// Everything degrades to plain text: if any of this fails, <see cref="Tag"/> returns the
 /// status name and the overlay stays readable.
