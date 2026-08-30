@@ -160,7 +160,28 @@ internal static class EffectOrder
     internal static void Sort(List<EffectLine> lines)
     {
         DropRedundantClears(lines);
-        lines.Sort(Compare);
+
+        // Where each line started is the last tiebreak, because Source is not the total key
+        // it was taken for: one component can add several lines, and List.Sort is unstable,
+        // so two lines from the same branch are free to swap between frames. Dynamite is the
+        // case that made it visible - a held-injury line and a blast line, both instant, both
+        // Injury, both additions, both from the Dynamite component.
+        List<(EffectLine Line, int Index)> indexed = new(lines.Count);
+        for (int i = 0; i < lines.Count; i++)
+        {
+            indexed.Add((lines[i], i));
+        }
+
+        indexed.Sort((a, b) =>
+        {
+            int ordered = Compare(a.Line, b.Line);
+            return ordered != 0 ? ordered : a.Index.CompareTo(b.Index);
+        });
+
+        for (int i = 0; i < lines.Count; i++)
+        {
+            lines[i] = indexed[i].Line;
+        }
     }
 
     /// <summary>

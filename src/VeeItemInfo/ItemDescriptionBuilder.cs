@@ -679,11 +679,57 @@ internal static class ItemDescriptionBuilder
         Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.baselineStaminaBoost, "Extra Stamina"),
             Onset.Instant, "Extra Stamina", effect.baselineStaminaBoost);
     }
+    /// <summary>
+    /// What still holding a stick of dynamite costs when the fuse runs out, as a status
+    /// fraction. <c>Dynamite.Update</c>, before the explosion is even spawned:
+    ///
+    /// <code>
+    ///   if (Character.localCharacter.data.currentItem == item)
+    ///       AddStatus(STATUSTYPE.Injury, 0.25f);
+    /// </code>
+    ///
+    /// <b>Hardcoded, and it has to be.</b> The 0.25 is a literal in a method body with
+    /// nothing exposing it at runtime - the one number this file gained back during the
+    /// provenance pass rather than lost.
+    /// </summary>
+    private const float HeldDynamiteInjury = 0.25f;
+
     private static void DescribeDynamite(Component component, Parts parts)
     {
         Dynamite effect = (Dynamite)component;
-        float injury = effect.explosionPrefab.GetComponent<AOE>().statusAmount;
-        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(injury, "Injury"),
+
+        // Two separate things happen and they used to be one line reading the blast's raw
+        // figure. A stick going off in the hand measures 52.5: a flat 25 for holding it, and
+        // 27.5 from the blast. Splitting them is what made that arithmetic come out.
+        //
+        // This one first, and with no radius after it, because it is not an area effect at
+        // all - it lands on whoever is holding the thing, wherever they are standing.
+        Collect(parts.Effects, parts.Source,
+            EffectFormatter.Effect(HeldDynamiteInjury, "Injury"),
+            Onset.Instant, "Injury", HeldDynamiteInjury);
+
+        // GetComponentInChildren, and guarded: this used to be a bare GetComponent on the
+        // prefab root, which would have thrown straight through Build and blanked the whole
+        // overlay the day the AOE moved down a level.
+        AOE? aoe = effect.explosionPrefab == null
+            ? null
+            : effect.explosionPrefab.GetComponentInChildren<AOE>(true);
+        if (aoe == null)
+        {
+            return;
+        }
+
+        float injury = Blast.Delivered(aoe, aoe.statusAmount);
+        if (injury == 0f)
+        {
+            return;
+        }
+
+        // The reach trails the amount, the same shape Scout's Initiative uses for its own
+        // area effect. It is also what tells this line apart from the one above at a glance.
+        Collect(parts.Effects, parts.Source,
+            EffectFormatter.Token(injury, "Injury")
+                + EffectColors.Neutral + " " + EffectFormatter.PeakMetres(aoe.range) + "</color>",
             Onset.Instant, "Injury", injury);
     }
     private static void DescribeSpawn(Component component, Parts parts)
