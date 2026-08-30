@@ -162,7 +162,8 @@ internal static class ItemDebug
     {
         Action_RestoreHunger a => $" restorationAmount={a.restorationAmount} onConsumed={a.OnConsumed}",
         Action_GiveExtraStamina a => $" amount={a.amount} onConsumed={a.OnConsumed}",
-        Action_ModifyStatus a => $" {a.statusType}={a.changeAmount} onConsumed={a.OnConsumed}",
+        Action_ModifyStatus a => $" {a.statusType}={a.changeAmount} onConsumed={a.OnConsumed}"
+            + $" ifSkeleton={a.ifSkeleton}",
         Action_InflictPoison a => $" perSecond={a.poisonPerSecond} time={a.inflictionTime} delay={a.delay}",
         Action_AddOrRemoveThorns a => $" thornCount={a.thornCount}",
         Action_ApplyAffliction a => $" affliction={a.affliction?.GetAfflictionType()}",

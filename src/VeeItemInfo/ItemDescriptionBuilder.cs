@@ -142,6 +142,13 @@ internal static class ItemDescriptionBuilder
     /// ConsumeDelayed once the item has changed hands. The "???" mark means "the worst thing
     /// happens to you", so it said the wrong thing here, and there is no symbol yet for a
     /// death that lands on someone else.</item>
+    /// <item><c>Action_BecomeSkeleton</c> - the Book of Bones, and it does not add or remove
+    /// anything: <c>RunAction</c> is one line flipping <c>data.isSkeleton</c>. Being a skeleton
+    /// has no icon and is not a <c>STATUSTYPE</c>, so there is nothing to draw and a word is
+    /// not an option. **It is still felt in the lines around it**: the item's <c>Curse +50</c>
+    /// carries <c>ifSkeleton</c>, and this component runs first, so the flag reads as "when you
+    /// turn into one" rather than "while you are one". That is why the curse pair renders
+    /// <c>0/+50</c> and <c>-25</c> - net +25 going in, -25 coming back.</item>
     /// <item><c>Action_ConsumeAndSpawn</c> - the four Berrynanas and nothing else in 2.1.a:
     /// eating one leaves you holding its own coloured peel. Judged not worth a line.
     /// **Not a gap** - the peel icons are packed regardless by
@@ -490,30 +497,46 @@ internal static class ItemDescriptionBuilder
     private static void DescribeModifyStatus(Component component, Parts parts)
     {
         Action_ModifyStatus effect = (Action_ModifyStatus)component;
-        if (parts.Consumable || !effect.OnConsumed)
+        if (!parts.Consumable && effect.OnConsumed)
         {
-            Collect(parts.Effects, parts.Source,
-                EffectFormatter.Effect(effect.changeAmount, effect.statusType.ToString()),
-                Onset.Instant, effect.statusType.ToString(), effect.changeAmount);
+            return;
+        }
 
-            // CharacterAfflictions.SubtractStatus takes the same amount off Spores
-            // whenever Poison is reduced deliberately:
-            //
-            //   if (statusType == Poison && !decreasedNaturally && character.IsLocal)
-            //       SubtractStatus(Spores, amount);
-            //
-            // So every poison cure is silently a spores cure of equal size. It is
-            // one-way - adding poison adds no spores - and it does not apply to the
-            // passive per-second decay. First Aid Kit, Antidote and Medicinal Root
-            // all cure spores through this and nothing else; the wiki was right and
-            // the components alone do not show it.
-            if (effect.statusType == CharacterAfflictions.STATUSTYPE.Poison && effect.changeAmount < 0f)
-            {
-                Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.changeAmount, "Spores"),
-                    Onset.Instant, "Spores", effect.changeAmount);
-            }
+        string status = effect.statusType.ToString();
+        Collect(parts.Effects, parts.Source, Change(effect, status),
+            Onset.Instant, status, effect.changeAmount);
+
+        // CharacterAfflictions.SubtractStatus takes the same amount off Spores
+        // whenever Poison is reduced deliberately:
+        //
+        //   if (statusType == Poison && !decreasedNaturally && character.IsLocal)
+        //       SubtractStatus(Spores, amount);
+        //
+        // So every poison cure is silently a spores cure of equal size. It is
+        // one-way - adding poison adds no spores - and it does not apply to the
+        // passive per-second decay. First Aid Kit, Antidote and Medicinal Root
+        // all cure spores through this and nothing else; the wiki was right and
+        // the components alone do not show it.
+        if (effect.statusType == CharacterAfflictions.STATUSTYPE.Poison && effect.changeAmount < 0f)
+        {
+            string spores = CharacterAfflictions.STATUSTYPE.Spores.ToString();
+            Collect(parts.Effects, parts.Source, Change(effect, spores),
+                Onset.Instant, spores, effect.changeAmount);
         }
     }
+
+    /// <summary>
+    /// One status change, conditional or not.
+    ///
+    /// <c>ifSkeleton</c> makes RunAction return before doing anything unless the character is
+    /// a skeleton, so the change is a coin the item flips rather than something it does. The
+    /// coupling above rides along: a conditional poison cure is a conditional spores cure.
+    /// </summary>
+    private static string Change(Action_ModifyStatus effect, string status) =>
+        effect.ifSkeleton
+            ? EffectFormatter.Conditional(effect.changeAmount, status)
+            : EffectFormatter.Effect(effect.changeAmount, status);
+
     private static void DescribeApplyAffliction(Component component, Parts parts)
     {
         Action_ApplyAffliction effect = (Action_ApplyAffliction)component;

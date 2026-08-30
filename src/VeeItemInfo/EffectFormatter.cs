@@ -47,6 +47,29 @@ internal static class EffectFormatter
         Colored((amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect);
 
     /// <summary>
+    /// An amount that either lands or does not - "0/+50 &lt;curse&gt;".
+    ///
+    /// <c>Action_ModifyStatus.ifSkeleton</c> makes the whole change conditional: RunAction
+    /// returns before doing anything unless the character is a skeleton. The Book of Bones
+    /// carries <c>Curse +0.5</c> with the flag and <c>Curse -0.25</c> without, and toggles you
+    /// with <c>Action_BecomeSkeleton</c> first - so using it as a human nets +25 and using it
+    /// as a skeleton nets -25. Printing the +50 unconditionally was wrong half the time.
+    ///
+    /// The slash is the discrete pair, the same form the item-duplication amulet uses for
+    /// "plain or mystical". The zero carries no sign, because nothing happening has no
+    /// direction and because a conditional removal would otherwise read "-0/-25".
+    /// </summary>
+    internal static string Conditional(float amount, string effect)
+    {
+        if (amount == 0f)
+        {
+            return "";
+        }
+
+        return Colored("0/" + (amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect) + "\n";
+    }
+
+    /// <summary>
     /// An unsigned amount and its icon, for values that have no direction. Takes a 0-1
     /// fraction like every other formatter here - weight is a status the game sets through
     /// SetStatus, so it is on the same scale as the rest and scales the same way.
