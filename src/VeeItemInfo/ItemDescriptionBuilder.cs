@@ -407,11 +407,70 @@ internal static class ItemDescriptionBuilder
     private static void DescribeAddOrRemoveThorns(Component component, Parts parts)
     {
         Action_AddOrRemoveThorns effect = (Action_AddOrRemoveThorns)component;
-        // UpdateWeight sets Thorns to 0.025 per *increment* returned by
-        // GetTotalThornStatusIncrements, and in-game testing on Prickleberry shows a
-        // thorn is worth two of those - 2 thorns read as 10, not 5. So 0.05 per thorn.
-        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.thornCount * 0.05f, "Thorns"),
-            Onset.Instant, "Thorns", effect.thornCount * 0.05f);
+        float thorns = effect.thornCount * ThornStatus();
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(thorns, "Thorns"),
+            Onset.Instant, "Thorns", thorns);
+    }
+
+    /// <summary>
+    /// What one thorn is worth, as a status fraction.
+    ///
+    /// UpdateWeight sets Thorns to one <see cref="GameValues.StatusStep"/> per *increment*, and a thorn
+    /// is not one increment: <c>GetTotalThornStatusIncrements</c> adds up
+    /// <c>ThornOnMe.GetThornDamage()</c>, which is the thorn's own <c>thornDamage</c> scaled
+    /// by <c>Ascents.etcDamageMultiplier</c>. In 2.1.a at ascent zero that is two increments,
+    /// which is why testing Prickleberry read 10 for two thorns rather than 5.
+    ///
+    /// This used to be a hardcoded 0.05 - that measurement, written down. Reading it also
+    /// picks up the ascent multiplier, which the constant never could: thorns are worth more
+    /// on the higher ascents and the overlay was quietly saying otherwise.
+    ///
+    /// The thorns belong to the character, not the item - a pool of ThornOnMe objects under
+    /// the ragdoll, enabled as they are stuck in - so this needs somebody to read them off.
+    /// With no character the fallback is the two increments 2.1.a ships, which is the old
+    /// constant expressed as what it always meant.
+    ///
+    /// <b>Zero is a real answer here.</b> Two custom-run switches take thorns away, and both
+    /// were being reported as a full Prickleberry:
+    /// <list type="bullet">
+    /// <item><c>Hazard_Thorns</c> off makes <c>CharacterAfflictions.AddThorn</c> return before
+    /// it does anything, so no thorn is stuck in at all.</item>
+    /// <item><c>EtcDamage</c> at zero makes <c>Ascents.etcDamageMultiplier</c> zero, so a thorn
+    /// is stuck in and worth nothing.</item>
+    /// </list>
+    /// Returning zero drops the line: <see cref="EffectFormatter.Effect"/> renders an empty
+    /// string for it and Collect discards that. Which is right - an effect that cannot happen
+    /// should not be described.
+    /// </summary>
+    private static float ThornStatus()
+    {
+        const int MeasuredIncrementsPerThorn = 2;
+
+        // AddThorn's own first test. With the hazard off it returns before stuffing anything
+        // in, so the action is inert however many thorns it asks for.
+        if (RunSettings.GetValue(RunSettings.SETTINGTYPE.Hazard_Thorns) == 0)
+        {
+            return 0f;
+        }
+
+        Character observed = Character.observedCharacter;
+        if (observed != null && observed.refs != null && observed.refs.afflictions != null
+            && observed.refs.afflictions.physicalThorns != null)
+        {
+            foreach (ThornOnMe thorn in observed.refs.afflictions.physicalThorns)
+            {
+                // Arrows share the pool and carry their own damage, so the first entry is not
+                // necessarily a thorn. The damage itself is not tested - a thorn worth zero
+                // increments is the EtcDamage switch turned off, which is an answer rather
+                // than a reason to reach for the fallback.
+                if (thorn != null && thorn.isThorn)
+                {
+                    return thorn.GetThornDamage() * GameValues.StatusStep;
+                }
+            }
+        }
+
+        return MeasuredIncrementsPerThorn * GameValues.StatusStep;
     }
     private static void DescribeModifyStatus(Component component, Parts parts)
     {
