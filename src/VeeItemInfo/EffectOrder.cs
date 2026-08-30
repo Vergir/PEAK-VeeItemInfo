@@ -89,14 +89,23 @@ internal readonly struct EffectLine
 ///    that got Energy Drink right: it strips 100 Drowsy on drinking and hands 25 back when
 ///    the boost ends, and the other order says the opposite of what happens.
 /// 2. Status, by the curated order below.
-/// 3. Direction, removals before additions - Napberry clears your drowsiness and then puts
-///    you to sleep, and that is the order it should read in.
-/// 4. Source component, purely so the result is total and nothing shuffles frame to frame.
+/// 3. The component the line came from, which for two changes to one status is the order the
+///    game applies them - ItemAction.Subscribe appends to a delegate and OnEnable runs down
+///    the component list. It also makes the order total, so nothing shuffles frame to frame.
 ///
-/// What is deliberately *not* a key is the order components sit on the prefab, which is what
-/// used to decide everything inside a bucket. It is arbitrary - the Cactus keeps its
-/// CactusBall behind a Rigidbody - and it made the overlay's ordering unreviewable, because
-/// no rule was being followed for anyone to disagree with.
+/// **Component order is a key only here, and only because here it is the arithmetic.** It is
+/// arbitrary as a general rule - the Cactus keeps its CactusBall behind a Rigidbody - and it
+/// used to decide everything inside a bucket, which made the ordering unreviewable because no
+/// rule was being followed for anyone to disagree with. Between two changes to the *same
+/// status at the same moment* it is not decoration: the game runs them in that sequence, and
+/// with a status clamped at zero the sequence changes the answer.
+///
+/// That replaced a fourth key, "removals before additions", which guessed at the same thing.
+/// The Book of Bones carries Curse +50 and Curse -25 in that order and nets +25 from any
+/// starting point; sorting the removal first said -25 then +50, which reads as +50 to anyone
+/// with no curse. The rule had been written for Napberry - wipe your drowsiness, then make you
+/// drowsy - and there the clear-all sits before the drowsy addition anyway, so the game's own
+/// order gives the same answer. Redundant where it was right, wrong where it was not.
 /// </summary>
 internal static class EffectOrder
 {
@@ -240,14 +249,19 @@ internal static class EffectOrder
             return byStatus;
         }
 
-        // Removals first. This only ever decides between two lines about the same status,
-        // where it is the difference between "it wipes your drowsiness, then makes you
-        // drowsy" and a pair of lines that contradict each other.
-        int byDirection = Direction(a.Amount).CompareTo(Direction(b.Amount));
-        return byDirection != 0 ? byDirection : a.Source.CompareTo(b.Source);
+        // Two changes to the same status at the same moment read in the order the game applies
+        // them, which is the order their components sit on the item: ItemAction.Subscribe
+        // appends to a delegate, and OnEnable runs down the component list.
+        //
+        // This used to be "removals first", which is a guess at something readable. The Book
+        // of Bones carries Curse +50 and Curse -25 in that order and nets +25 from any
+        // starting point; sorting the removal first said -25 then +50, which reads as +50 to
+        // anyone with no curse, because a removal at zero does nothing. The rule was written
+        // for Napberry - wipe your drowsiness, then make you drowsy - and there the clear-all
+        // sits before the drowsy addition anyway, so the game's own order already gives the
+        // same answer. It was redundant where it was right and wrong where it was not.
+        return a.Source.CompareTo(b.Source);
     }
-
-    private static int Direction(float amount) => amount < 0f ? 0 : 1;
 
     /// <summary>
     /// Whether a line is what the item costs rather than what it does. Only petrify, and
