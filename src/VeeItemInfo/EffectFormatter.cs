@@ -86,11 +86,10 @@ internal static class EffectFormatter
     /// followed rather than described from memory. The four names that used to be written here
     /// are now nobody's opinion.
     ///
-    /// The one judgement left is ours: a status with no icon is skipped, because
-    /// <see cref="StatusIcons.Tag"/> falls back to the name in capitals and listing it would
-    /// put English back on the line. That used to exclude Web and FlyTrap by hand; both have
-    /// had bars and icons since every BarAffliction started being scraped, so the exception
-    /// retired itself and they are simply included now.
+    /// Two judgements are left, and both are ours rather than the game's. A status with no
+    /// icon is skipped, because <see cref="StatusIcons.Tag"/> falls back to the name in
+    /// capitals and listing it would put English back on the line. And
+    /// <see cref="TooRareToList"/> is left out on purpose - see there.
     ///
     /// Curse is not here because almost every clear-all excludes it; callers add it when
     /// their own flag says it is included. Petrify likewise, and it sorts last anyway.
@@ -104,6 +103,25 @@ internal static class EffectFormatter
 
     /// <summary>Drops the cached list, for a rebuilt icon atlas or a hot reload.</summary>
     internal static void ForgetClearable() => clearable = null;
+
+    /// <summary>
+    /// Statuses a clear-all really does remove, and the overlay still does not name.
+    ///
+    /// Web, FlyTrap and Thorns come from hazards a player meets rarely, so on almost every
+    /// clear-all item they are two or three lines describing something the reader is not
+    /// carrying and will not be. The list is an editorial choice about what is worth a line,
+    /// which is why it is stated here rather than smuggled in as a filter.
+    ///
+    /// Thorns is already refused by <c>StatusIsCurable</c>, so today this changes nothing for
+    /// it. It stays named because the reason to leave it out is ours and would outlive a patch
+    /// that made thorns curable.
+    /// </summary>
+    private static readonly CharacterAfflictions.STATUSTYPE[] TooRareToList =
+    {
+        CharacterAfflictions.STATUSTYPE.Web,
+        CharacterAfflictions.STATUSTYPE.FlyTrap,
+        CharacterAfflictions.STATUSTYPE.Thorns,
+    };
 
     private static string[] ReadClearable()
     {
@@ -122,11 +140,25 @@ internal static class EffectFormatter
                 continue;
             }
 
+            if (Array.IndexOf(TooRareToList, status) >= 0)
+            {
+                continue;
+            }
+
             string name = status.ToString();
             if (StatusIcons.HasIcon(name))
             {
                 curable.Add(name);
             }
+        }
+
+        // Logged once per icon build rather than per description, and only with debug logging
+        // on. The list is derived now, so "what does a clear-all actually claim to remove" is
+        // no longer answerable by reading the source.
+        if (PluginConfig.DebugLogging.Value)
+        {
+            Plugin.Log.LogInfo($"[clear] a clear-all lists: {string.Join(", ", curable)}"
+                + $" (character {(afflictions == null ? "absent, curability unchecked" : "read")})");
         }
 
         return curable.ToArray();
