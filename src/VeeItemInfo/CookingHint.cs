@@ -162,8 +162,12 @@ internal static class CookingHint
 
         // Only injury is called out. A helpful explosion says nothing beyond its reach,
         // which is the whole point of not using a blast symbol.
+        //
+        // Delivered, not advertised. RPC_CookingExplode explicitly handles the local character
+        // still holding the item, so a cooking explosion going off point-blank is the ordinary
+        // case rather than an edge one - a stovetop advertising 20 injury gives 17.5.
         float injury = aoe.statusType == CharacterAfflictions.STATUSTYPE.Injury
-            ? aoe.statusAmount
+            ? Blast.Delivered(aoe, aoe.statusAmount)
             : -1f;
 
         return Explodes(aoe.range, injury > 0f ? injury : -1f);

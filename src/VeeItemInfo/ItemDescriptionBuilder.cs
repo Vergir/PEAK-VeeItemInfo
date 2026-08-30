@@ -687,7 +687,7 @@ internal static class ItemDescriptionBuilder
         // would print a second Weight figure that the Weight section does not know
         // about, and no item in 2.1.a is known to set it.
         parts.Layout.Add(Block.Custom,
-            EffectFormatter.Effect(sticky.addThornsToStuckPlayer * 0.025f, "Thorns"));
+            EffectFormatter.Effect(sticky.addThornsToStuckPlayer * GameValues.StatusStep, "Thorns"));
     }
     private static void DescribeBingBongShieldWhileHolding(Component component, Parts parts)
     {
@@ -1004,7 +1004,7 @@ internal static class ItemDescriptionBuilder
 
         if (repeat == null || !repeat.repeating || repeat.rate <= 0f)
         {
-            Collect(lines, 0, EffectFormatter.Effect(Standing(aoe, amount), status),
+            Collect(lines, 0, EffectFormatter.Effect(Blast.Delivered(aoe, amount), status),
                 Onset.Instant, status, amount);
         }
         else
@@ -1019,12 +1019,6 @@ internal static class ItemDescriptionBuilder
             AddBlast(lines, aoe, CharacterAfflictions.STATUSTYPE.Spores, amount, repeat, seconds);
         }
     }
-
-    /// <summary>
-    /// The smallest change the status bars can actually record. CharacterAfflictions holds a
-    /// running total per status and only spends it in whole units of this.
-    /// </summary>
-    private const float StatusStep = 0.025f;
 
     /// <summary>
     /// What a repeating blast is worth over its whole life - which is neither its amount
@@ -1050,7 +1044,8 @@ internal static class ItemDescriptionBuilder
     ///
     /// This also makes the blast's distance factor irrelevant here: anything between 0.0125
     /// and 0.025 a tick lands on the same one step per second, so the empirical 0.9 in
-    /// <see cref="Standing"/> is not needed for the ticking half and is not applied to it.
+    /// <see cref="Blast.Delivered"/>'s point-blank factor is not needed for the ticking half
+    /// and is not applied to it.
     /// </summary>
     private static float TickedTotal(float amount, float period, float seconds)
     {
@@ -1062,44 +1057,21 @@ internal static class ItemDescriptionBuilder
 
         float payout;
         float every;
-        if (perTick >= StatusStep)
+        if (perTick >= GameValues.StatusStep)
         {
             // Big enough to pay out every tick, still losing whatever does not fill a step.
-            payout = Mathf.Floor(perTick / StatusStep) * StatusStep;
+            payout = Mathf.Floor(perTick / GameValues.StatusStep) * GameValues.StatusStep;
             every = period;
         }
         else
         {
             // Too small to pay out alone, so it takes several ticks to reach one step.
-            payout = StatusStep;
-            every = Mathf.Ceil(StatusStep / perTick) * period;
+            payout = GameValues.StatusStep;
+            every = Mathf.Ceil(GameValues.StatusStep / perTick) * period;
         }
 
         float payouts = Mathf.Max(0f, Mathf.Ceil(seconds / every) - 1f);
         float total = payouts * payout;
         return amount < 0f ? -total : total;
     }
-
-    /// <summary>
-    /// What an explosion actually gives the person who set it off, rather than what its
-    /// statusAmount says.
-    ///
-    /// AOE.Explode scales every amount by <c>GetFactor(dist) = (1 - dist/range)^factorPow</c>,
-    /// and <c>dist</c> is measured to <c>character.Center</c> - your chest, not your feet. So
-    /// the factor never reaches 1 no matter where you stand, and the full figure is a number
-    /// nobody can ever be given. Standing on the blast leaves roughly a tenth of the range
-    /// between you and it.
-    ///
-    /// The rounding is the game's own: <c>CharacterAfflictions.RoundStatus</c> snaps statuses
-    /// to multiples of 1/40, which is 2.5 display units.
-    ///
-    /// This is jkqt's original formula, restored. It was removed as an unexplained haircut
-    /// and put back when in-game testing confirmed the figure it produces - Remedy Fungus
-    /// heals 17.5, not the 20 its AOE advertises. **The 0.9 is empirical**: it is a stand-in
-    /// for a geometry the overlay cannot measure, and it is the one number in this file that
-    /// no field in the game backs up.
-    /// </summary>
-    private static float Standing(AOE aoe, float amount) =>
-        aoe.ignoreFactor ? amount : Mathf.Round(amount * 0.9f * 40f) / 40f;
-
 }
