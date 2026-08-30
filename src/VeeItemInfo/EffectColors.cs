@@ -109,9 +109,75 @@ internal static class EffectColors
     };
 
     /// <summary>
+    /// Colours read off the running game, which win over the table above.
+    ///
+    /// The table is a sampling somebody took once and pasted in, so a patch that repainted a
+    /// bar would leave it saying the old thing forever - exactly the failure this mod keeps
+    /// hitting with numbers. <see cref="StatusIcons"/> already walks every BarAffliction to
+    /// scrape icons, so the colour rides along on that same walk and costs nothing.
+    ///
+    /// The table stays as the fallback rather than being deleted: the walk happens once the
+    /// HUD exists, and a description built before then still needs an answer.
+    /// </summary>
+    private static readonly Dictionary<string, string> Sampled = new();
+
+    /// <summary>
+    /// Records a colour read off the game's own UI.
+    ///
+    /// Pure white and pure black are refused. A tinted silhouette left at white means the
+    /// artwork carries its own colour and nothing was chosen here, which is not a palette
+    /// entry - taking it would turn the shield marker from gold into the default. Same for a
+    /// fully black Image, which is a backing rather than a fill.
+    /// </summary>
+    internal static void Sample(string effect, Color color)
+    {
+        // Only *pure* white is refused, not merely pale. Web is #E6E6E7 - a real status colour
+        // at 0.90 - so a threshold with any slack in it would silently start discarding a
+        // reading the moment the game brightened that bar.
+        float max = Mathf.Max(color.r, Mathf.Max(color.g, color.b));
+        float min = Mathf.Min(color.r, Mathf.Min(color.g, color.b));
+        if (max < 0.02f || min > 0.99f)
+        {
+            return;
+        }
+
+        Sampled[effect] = "<#" + ColorUtility.ToHtmlStringRGB(color) + ">";
+    }
+
+    /// <summary>
+    /// What was sampled and how it compares to the table, as one line. Only the differences
+    /// are named: a long list means the sampling is picking the wrong Image, and a short one
+    /// means the game moved a colour and the overlay followed it.
+    /// </summary>
+    internal static string SampleReport()
+    {
+        List<string> moved = new();
+        foreach (KeyValuePair<string, string> entry in Sampled)
+        {
+            if (!Colors.TryGetValue(entry.Key, out string? had) || had != entry.Value)
+            {
+                moved.Add($"{entry.Key} {had ?? "(none)"}->{entry.Value}");
+            }
+        }
+
+        return $"{Sampled.Count} colours read from the game"
+            + (moved.Count == 0 ? ", all matching the table." : $", {moved.Count} differing: {string.Join(", ", moved)}.");
+    }
+
+    /// <summary>Drops the sampled palette, for a hot reload or a rebuilt HUD.</summary>
+    internal static void ClearSamples() => Sampled.Clear();
+
+    /// <summary>
     /// Never throws. An unmapped status returns <see cref="Neutral"/> - a missing key
     /// used to bubble a KeyNotFoundException out of the whole build and blank the overlay.
     /// </summary>
-    internal static string Get(string effect) =>
-        Colors.TryGetValue(effect, out string? color) ? color : Neutral;
+    internal static string Get(string effect)
+    {
+        if (Sampled.TryGetValue(effect, out string? live))
+        {
+            return live;
+        }
+
+        return Colors.TryGetValue(effect, out string? color) ? color : Neutral;
+    }
 }

@@ -153,6 +153,12 @@ internal static class StatusIcons
             // The petrify bar reports its afflictionType as Injury while carrying the
             // petrify icon. Without this, Injury gets the wrong picture.
             string name = bar.isPetrify ? "Petrify" : bar.afflictionType.ToString();
+
+            // The colour rides along on the walk we are already doing. Sampled every time
+            // rather than only on a first sight, because the bar is the authority and this
+            // costs nothing beyond what the icon scrape already paid for.
+            SampleBarColour(bar, name);
+
             if (seen.Add(name))
             {
                 icons.Add(IconSource.FromSprite(name, sprite));
@@ -166,6 +172,19 @@ internal static class StatusIcons
         {
             icons.Add(IconSource.FromSprite("ExtraStamina", staminaIcon));
         }
+
+        // It has no BarAffliction, but it does have a *bar* - the short second stripe under
+        // the main one - so the colour is readable even though it needed its icon fetching by
+        // hand. extraBarStamina is the fill; the icon beside it is tinted to match and stands
+        // in if the fill turns out to be untinted.
+        //
+        // Keyed with the space, because "Extra Stamina" is what EffectColors is asked for.
+        // The icon is registered without one only because a sprite name cannot contain a
+        // space, and the two lookups are not the same table.
+        // Icon first, bar second: the later reading wins, so the bar is preferred and the icon
+        // is only what remains if the fill turns out to be untinted.
+        SampleIndicatorColour(staminaBar?.extraStaminaIcon, "Extra Stamina");
+        SampleIndicatorColour(staminaBar?.extraBarStamina, "Extra Stamina");
 
         // Two more indicators hang off the stamina bar as plain GameObjects rather than
         // BarAfflictions, so they need fetching by hand. 'shield' is the invincibility
@@ -225,6 +244,80 @@ internal static class StatusIcons
     }
 
     /// <summary>
+    /// Reads a status's colour off its own bar.
+    ///
+    /// A BarAffliction carries three Images: a dark backing, and the bright fill on two
+    /// overlapping sprites that always agree with each other. **The fill is the colour two of
+    /// them share**, which is the one thing that distinguishes it without naming anything.
+    ///
+    /// Brightest-wins was tried first and is wrong for a dark status. Curse is nearly black,
+    /// so its backing outshone its own fill and the overlay read `#635660` for a colour that
+    /// is `#1B0043`. Sprite names would work - `DitherStripes` and `UI_Blur_Outlne_Thick`
+    /// against `procedural_ui_image_default_sprite` - and are exactly the kind of lookup that
+    /// goes quiet after a UI reshuffle, which every other name-keyed lookup here has been
+    /// retired for.
+    ///
+    /// Finding no pair samples nothing, leaving the hand-picked table in place. That is the
+    /// right way to fail: a wrong colour is worse than an old one.
+    ///
+    /// The bar's own icon is skipped. It is a white silhouette tinted by its Image, so it
+    /// would happily pair with anything and says nothing about the status.
+    /// </summary>
+    private static void SampleBarColour(BarAffliction bar, string name)
+    {
+        UnityEngine.UI.Image[] images = bar.GetComponentsInChildren<UnityEngine.UI.Image>(true);
+
+        for (int i = 0; i < images.Length; i++)
+        {
+            if (images[i] == null || images[i] == bar.icon)
+            {
+                continue;
+            }
+
+            for (int j = i + 1; j < images.Length; j++)
+            {
+                if (images[j] == null || images[j] == bar.icon)
+                {
+                    continue;
+                }
+
+                if (Agree(images[i].color, images[j].color))
+                {
+                    EffectColors.Sample(name, images[i].color);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether two Images are showing the same colour. Set from the same source, so this is
+    /// really an equality test with room for the float round trip.
+    /// </summary>
+    private static bool Agree(Color a, Color b)
+    {
+        const float Tolerance = 1f / 255f;
+        return Mathf.Abs(a.r - b.r) <= Tolerance
+            && Mathf.Abs(a.g - b.g) <= Tolerance
+            && Mathf.Abs(a.b - b.b) <= Tolerance;
+    }
+
+    /// <summary>
+    /// Reads a colour off a single tinted Image somewhere under <paramref name="host"/>, for
+    /// the markers that have no BarAffliction and so no agreeing pair to look for.
+    /// </summary>
+    private static void SampleIndicatorColour(Component? host, string name)
+    {
+        UnityEngine.UI.Image? image = host == null
+            ? null
+            : host.GetComponentInChildren<UnityEngine.UI.Image>(includeInactive: true);
+        if (image != null)
+        {
+            EffectColors.Sample(name, image.color);
+        }
+    }
+
+    /// <summary>
     /// Pulls the sprite out of one of the stamina bar's loose indicator objects. The Image
     /// may sit on the object itself or on a child, and the object is usually inactive -
     /// GetComponentInChildren needs includeInactive for that.
@@ -242,6 +335,16 @@ internal static class StatusIcons
         {
             return;
         }
+
+        // Shield and Cook are the two of the mod's invented keys that turn out to have a
+        // colour in the game after all. Both are white silhouettes tinted by their Image, the
+        // same arrangement as a status bar's fill, so that tint is the colour the HUD shows -
+        // and it was being hand-picked beside the icon we already scrape from here.
+        //
+        // Sample refuses a white Image, which is what an untinted indicator looks like, so a
+        // marker the game does not colour keeps the hand-picked entry rather than turning
+        // into the default.
+        EffectColors.Sample(name, image!.color);
 
         if (seen.Add(name))
         {
