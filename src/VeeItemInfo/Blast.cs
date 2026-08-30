@@ -68,7 +68,7 @@ internal static class Blast
     /// It is readable in principle: <c>Character.Center</c> is the torso bodypart's position.
     /// But that is a live ragdoll position that moves as you crouch and climb, and sampling it
     /// would make the overlay's numbers drift while you hold an item, which nothing else in it
-    /// does. See backlog section 1.
+    /// does - so this stays a constant on purpose rather than for want of noticing.
     /// </summary>
     private const float PointBlankDistance = 0.64f;
 
