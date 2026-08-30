@@ -126,6 +126,13 @@ internal static class StatusIcons
     internal static string Tag(string status) =>
         Tags.TryGetValue(status, out string? tag) ? tag : status.ToUpper();
 
+    /// <summary>
+    /// Whether a status has a real icon, as opposed to the capitalised name
+    /// <see cref="Tag"/> falls back to. Anything assembling a list of statuses to show needs
+    /// this, because the fallback is English and the overlay has none.
+    /// </summary>
+    internal static bool HasIcon(string status) => Tags.ContainsKey(status);
+
     internal static void EnsureBuilt()
     {
         if (Available || attempts >= MaxAttempts || Time.unscaledTime < nextAttempt)
@@ -217,32 +224,33 @@ internal static class StatusIcons
         AddBarIndicator(icons, seen, staminaBar?.campfire, "Cook");
 
         // A stand-in for "some item", used where a description needs to talk about an item
-        // without naming one. BingBong is the game's own mascot and reads as generic.
-        Texture2D? genericItem = FindItemIcon("BingBong");
-        if (genericItem != null && seen.Add("Item"))
-        {
-            icons.Add(IconSource.FromTexture("Item", genericItem));
-        }
+        // without naming one. BingBong is the game's own mascot and reads as generic; the
+        // item carries a tag saying so, which beats knowing what it is called.
+        AddItemIcon(icons, seen, "Item", FirstItemWith(item => item.itemTags.HasFlag(Item.ItemTags.BingBong)));
 
         // The Rope Cannon describes two distances that would otherwise be a pair of bare
         // numbers: how far it shoots, and how much rope that leaves behind. Its own icon and
         // the spool's tell them apart without a word, and the anti-rope pair gets its own set
         // so a floating rope never advertises itself with an ordinary one.
         //
-        // Exact names, not substrings: "RopeShooter" is a prefix of "RopeShooterAnti", so a
-        // contains-match would hand whichever the database iterated first to both.
-        AddItemIcon(icons, seen, "RopeCannon", "RopeShooter");
-        AddItemIcon(icons, seen, "RopeCannonAnti", "RopeShooterAnti");
-        AddItemIcon(icons, seen, "RopeSpool", "RopeSpool");
-        AddItemIcon(icons, seen, "RopeSpoolAnti", "Anti-Rope Spool");
+        // Asked of the components rather than of four item names. The names were exact matches
+        // because "RopeShooter" is a prefix of "RopeShooterAnti" and one of them was spelled
+        // "Anti-Rope Spool" with a space - the sort of detail that is right until the day it
+        // is not, and goes quiet rather than failing. What actually separates the pairs is
+        // what the description chain already uses to tell them apart: a cannon that fires
+        // floating rope carries Antigrav, and a spool says isAntiRope itself.
+        AddItemIcon(icons, seen, "RopeCannon", FirstItemWith(item =>
+            item.GetComponent<RopeShooter>() != null && item.GetComponent<Antigrav>() == null));
+        AddItemIcon(icons, seen, "RopeCannonAnti", FirstItemWith(item =>
+            item.GetComponent<RopeShooter>() != null && item.GetComponent<Antigrav>() != null));
+        AddItemIcon(icons, seen, "RopeSpool", FirstItemWith(item =>
+            item.GetComponent<RopeSpool>() is RopeSpool spool && !spool.isAntiRope));
+        AddItemIcon(icons, seen, "RopeSpoolAnti", FirstItemWith(item =>
+            item.GetComponent<RopeSpool>() is RopeSpool spool && spool.isAntiRope));
 
-        // "You float." Scout's Initiative drops your gravity rather than granting speed, and
-        // the balloon bunch is the game's own picture of that - no status icon exists for it.
-        Texture2D? floaty = FindItemIcon("BalloonBunch") ?? FindItemIcon("Balloon");
-        if (floaty != null && seen.Add("Float"))
-        {
-            icons.Add(IconSource.FromTexture("Float", floaty));
-        }
+        // "You float." Scout's Initiative drops your gravity rather than granting speed, and a
+        // balloon is the game's own picture of that - no status icon exists for it.
+        AddItemIcon(icons, seen, "Float", FirstItemWith(item => item.GetComponent<Balloon>() != null));
 
         // Every item that another item turns into. Added last, so a status keeps its key if
         // an item ever shares the name.
@@ -525,9 +533,14 @@ internal static class StatusIcons
     /// standing for low gravity, BingBong standing for "some item".
     /// </summary>
     private static void AddItemIcon(List<IconSource> icons, HashSet<string> seen,
-        string key, string itemName)
+        string key, Item? item)
     {
-        Texture2D? icon = FindItemIconExact(itemName);
+        if (item == null)
+        {
+            return;
+        }
+
+        Texture2D? icon = item.UIData.GetIcon();
         if (icon != null && seen.Add(key))
         {
             icons.Add(IconSource.FromTexture(key, icon));
@@ -535,30 +548,19 @@ internal static class StatusIcons
     }
 
     /// <summary>
-    /// An item's icon by its exact database name. <see cref="FindItemIcon"/> matches on a
-    /// substring, which is fine for a one-off like BingBong and wrong wherever one item's
-    /// name is a prefix of another's.
+    /// The first item in the database that answers to <paramref name="matches"/>, or null.
+    ///
+    /// This replaced a pair of by-name lookups. Asking what an item *is* rather than what it
+    /// is called is the same rule the description chain follows, and for the same reason: a
+    /// name goes stale without failing, and the first sign is an icon quietly missing.
     /// </summary>
-    private static Texture2D? FindItemIconExact(string itemName)
+    private static Item? FirstItemWith(Func<Item, bool> matches)
     {
         foreach (Item entry in AllItems())
         {
-            if (entry.name.Equals(itemName, StringComparison.OrdinalIgnoreCase))
+            if (matches(entry))
             {
-                return entry.UIData.GetIcon();
-            }
-        }
-
-        return null;
-    }
-
-    private static Texture2D? FindItemIcon(string nameContains)
-    {
-        foreach (Item entry in AllItems())
-        {
-            if (entry.name.IndexOf(nameContains, StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return entry.UIData.GetIcon();
+                return entry;
             }
         }
 
@@ -1011,6 +1013,10 @@ internal static class StatusIcons
         // fresh as this build. Dropping it here keeps a hot reload or a rebuilt HUD from
         // carrying colours forward from a scene that no longer exists.
         EffectColors.ClearSamples();
+
+        // Which statuses can be listed depends on which have icons, so that answer is only as
+        // good as this build too.
+        EffectFormatter.ForgetClearable();
     }
 
     private static string lastLogged = "";

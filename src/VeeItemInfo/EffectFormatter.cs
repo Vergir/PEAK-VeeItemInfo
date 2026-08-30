@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Peak.Afflictions;
@@ -74,31 +75,62 @@ internal static class EffectFormatter
     /// The statuses a clear-all actually removes, in display order.
     ///
     /// Not every status, and not the display order's own list - the two were one array
-    /// until this split, and it was quietly lying. Both of the game's clear-all paths refuse
-    /// the same four: <c>CharacterAfflictions.StatusIsCurable</c> returns false for Crab,
-    /// Weight, Thorns and Arrow, and <c>Action_ClearAllStatus.defaultExclusions</c> holds
-    /// exactly those four as well. **Thorns was in the old list**, so every clear-all item in
-    /// the game - Napberry, Cure-All, Pandora's Lunchbox, the Blowgun dart - promised to
-    /// strip 100 thorns that it has never once removed.
+    /// until this split, and it was quietly lying. **Thorns was in the old list**, so every
+    /// clear-all item in the game - Napberry, Cure-All, Pandora's Lunchbox, the Blowgun dart -
+    /// promised to strip 100 thorns that it has never once removed.
     ///
-    /// Web and FlyTrap *are* curable and are still left out, for a different reason: neither
-    /// has a scrapeable icon, and <see cref="StatusIcons.Tag"/> falls back to the status name
-    /// in capitals, so listing them would put English back on the line. No item in 2.1.a
-    /// inflicts either.
+    /// <b>Asked of the game rather than listed.</b> <c>ClearAllStatus</c> keeps no list: it
+    /// walks every <c>STATUSTYPE</c> and asks <c>StatusIsCurable</c>, which refuses Crab,
+    /// Weight, Thorns and Arrow outright and defers Curse and Petrify to its callers. Asking
+    /// the same question means a patch that makes a status curable, or stops one being so, is
+    /// followed rather than described from memory. The four names that used to be written here
+    /// are now nobody's opinion.
+    ///
+    /// The one judgement left is ours: a status with no icon is skipped, because
+    /// <see cref="StatusIcons.Tag"/> falls back to the name in capitals and listing it would
+    /// put English back on the line. That used to exclude Web and FlyTrap by hand; both have
+    /// had bars and icons since every BarAffliction started being scraped, so the exception
+    /// retired itself and they are simply included now.
     ///
     /// Curse is not here because almost every clear-all excludes it; callers add it when
-    /// their own flag says it is included.
+    /// their own flag says it is included. Petrify likewise, and it sorts last anyway.
+    ///
+    /// Recomputed whenever the icons are rebuilt, since that is what decides which entries
+    /// can be rendered at all.
     /// </summary>
-    internal static readonly string[] Clearable =
+    internal static IReadOnlyList<string> Clearable => clearable ??= ReadClearable();
+
+    private static string[]? clearable;
+
+    /// <summary>Drops the cached list, for a rebuilt icon atlas or a hot reload.</summary>
+    internal static void ForgetClearable() => clearable = null;
+
+    private static string[] ReadClearable()
     {
-        CharacterAfflictions.STATUSTYPE.Hunger.ToString(),
-        CharacterAfflictions.STATUSTYPE.Injury.ToString(),
-        CharacterAfflictions.STATUSTYPE.Poison.ToString(),
-        CharacterAfflictions.STATUSTYPE.Spores.ToString(),
-        CharacterAfflictions.STATUSTYPE.Cold.ToString(),
-        CharacterAfflictions.STATUSTYPE.Hot.ToString(),
-        CharacterAfflictions.STATUSTYPE.Drowsy.ToString(),
-    };
+        CharacterAfflictions? afflictions = Character.observedCharacter == null
+            ? null
+            : Character.observedCharacter.refs.afflictions;
+
+        List<string> curable = new();
+        foreach (CharacterAfflictions.STATUSTYPE status in
+            Enum.GetValues(typeof(CharacterAfflictions.STATUSTYPE)))
+        {
+            // Curse and Petrify are the two the game defers to its caller, and both are
+            // handled by the caller here too - so they are asked for as excluded.
+            if (afflictions != null && !afflictions.StatusIsCurable(status, false, false))
+            {
+                continue;
+            }
+
+            string name = status.ToString();
+            if (StatusIcons.HasIcon(name))
+            {
+                curable.Add(name);
+            }
+        }
+
+        return curable.ToArray();
+    }
 
     /// <summary>
     /// A distance already in PEAK metres. No space before the unit, matching how durations

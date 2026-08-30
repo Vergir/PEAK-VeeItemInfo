@@ -24,13 +24,28 @@ namespace VeeItemInfo;
 internal static class ItemDescriptionBuilder
 {
     /// <summary>
-    /// What Affliction_HealAll treats, in its own order. maxHealing is a budget shared
-    /// across all six rather than an allowance for each.
+    /// What Affliction_HealAll treats, in its own order - read from the affliction rather
+    /// than typed out. maxHealing is a budget shared across all of them rather than an
+    /// allowance for each, and the order matters because the first one ranks the line.
+    ///
+    /// <c>statusesToHeal</c> is private on the game's side, which the publicizer settles;
+    /// naming it means a patch that adds a seventh status, drops one, or reorders them moves
+    /// the overlay with it, and a patch that renames the field breaks this build rather than
+    /// leaving six hardcoded names quietly describing the wrong item.
     /// </summary>
-    private static readonly string[] HealAllStatuses =
+    private static readonly string[] HealAllStatuses = ReadHealAllStatuses();
+
+    private static string[] ReadHealAllStatuses()
     {
-        "Injury", "Spores", "Poison", "Cold", "Hot", "Drowsy",
-    };
+        CharacterAfflictions.STATUSTYPE[] healed = Peak.Afflictions.Affliction_HealAll.statusesToHeal;
+        string[] names = new string[healed.Length];
+        for (int i = 0; i < healed.Length; i++)
+        {
+            names[i] = healed[i].ToString();
+        }
+
+        return names;
+    }
 
     internal static string Build(Item item)
     {

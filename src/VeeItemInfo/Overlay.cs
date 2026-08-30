@@ -60,22 +60,23 @@ internal static class Overlay
 
     internal static void Create()
     {
-        GameObject? guiManagerGameObj = GameObject.Find("GAME/GUIManager");
-        if (guiManagerGameObj == null)
-        {
-            return;
-        }
-
-        guiManager = guiManagerGameObj.GetComponent<GUIManager>();
+        // The singleton and its canvas, rather than a scene path and a child name. Both used
+        // to be strings - "GAME/GUIManager" and "Canvas_HUD" - and either would have gone
+        // quiet the day the game moved an object or renamed it, taking the whole overlay with
+        // it and saying nothing. GUIManager.instance and GUIManager.hudCanvas are public
+        // fields, so a rename breaks this build instead.
+        guiManager = GUIManager.instance;
         if (guiManager == null)
         {
             return;
         }
 
-        hudRect = guiManagerGameObj.transform.Find("Canvas_HUD") as RectTransform;
+        hudRect = guiManager.hudCanvas == null
+            ? null
+            : guiManager.hudCanvas.transform as RectTransform;
         if (hudRect == null)
         {
-            Plugin.Log.LogWarning("Could not find Canvas_HUD - overlay not created.");
+            Plugin.Log.LogWarning("GUIManager has no HUD canvas - overlay not created.");
             return;
         }
 
