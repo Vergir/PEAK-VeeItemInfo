@@ -25,6 +25,7 @@ internal static class Overlay
     private static TextMeshProUGUI? textMesh;
     private static RectTransform? rect;
     private static RectTransform? hudRect;
+
     private static Item? trackedItem;
     private static string lastText = "";
     private static float cachedHeight;
@@ -226,6 +227,17 @@ internal static class Overlay
         // has no sprite asset assigned even when the old one is perfectly alive. Either
         // way TMP falls back to its own sprite set and every icon renders as a "?".
         if (StatusIcons.Available && !StatusIcons.IsValid)
+        {
+            StatusIcons.Invalidate();
+        }
+
+        // Icons are packed at the size they are drawn, and that size follows Font Size and
+        // the canvas scale - so a settings change or a resolution change makes the current
+        // atlas the wrong resolution rather than merely stale. Comparing the target against
+        // what was built catches both without either needing an event of its own; the target
+        // is quantised to a power of two, so it holds still across a slider drag instead of
+        // repacking on every frame of it.
+        if (StatusIcons.Available && !StatusIcons.MatchesSettings)
         {
             StatusIcons.Invalidate();
         }

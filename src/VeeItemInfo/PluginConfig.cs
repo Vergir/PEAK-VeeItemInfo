@@ -13,6 +13,17 @@ internal static class PluginConfig
     internal static ConfigEntry<float> OutlineWidth = null!;
     internal static ConfigEntry<float> LineSpacing = null!;
 
+    /// <summary>
+    /// How hard the contrast curve on an icon's alpha is - 1 leaves it alone.
+    ///
+    /// The game's icons are authored with very wide feathered edges: a status icon is pure
+    /// white in RGB with the entire shape carried in alpha, and nearly as many of its pixels
+    /// are part-transparent as are solid. That reads as a soft, muddy glyph at the size the
+    /// overlay draws them, and it is in the artwork rather than in anything the mod does - a
+    /// copy of the game's own texture at 1:1 is exactly as soft.
+    /// </summary>
+    internal static ConfigEntry<float> IconSharpness = null!;
+
     internal static ConfigEntry<float> Width = null!;
     internal static ConfigEntry<float> OffsetX = null!;
     internal static ConfigEntry<float> OffsetY = null!;
@@ -39,6 +50,9 @@ internal static class PluginConfig
             "Thickness of the outline around the text. 0 disables it.");
         LineSpacing = Bind(config, Appearance, "Line Spacing", -35f, -100f, 50f,
             "Spacing between lines. Negative values tighten it up.");
+        IconSharpness = Bind(config, Appearance, "Icon Sharpness", 4f, 1f, 8f,
+            "How crisp the status icons are. The game draws them with very soft edges, which "
+            + "reads as blurry at overlay size. 1 leaves them exactly as the game has them.");
         // Icon size and alignment are constants in StatusIcons, expressed as fractions of
         // the font size. That makes Font Size the single knob for how big everything is.
 

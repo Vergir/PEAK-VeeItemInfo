@@ -61,18 +61,37 @@ internal static class StatusIcons
     private const float IconScale = 0.85f;
 
     /// <summary>
-    /// The longest side an icon is copied at, in pixels.
+    /// How many pixels tall each icon is copied at.
     ///
-    /// Derived rather than picked. An icon draws at <see cref="IconScale"/> x Font Size, and
-    /// Font Size is capped at 72 by its config range, so 61 units is the largest the overlay
-    /// can ever ask for. Round that up to 64 and double it for a HUD canvas scaled up on a
-    /// high-DPI display.
+    /// <b>Height, not the long side.</b> A glyph's height is what is pinned to the font:
+    /// <see cref="ApplyMetrics"/> gives every icon a height of <see cref="IconScale"/> em and
+    /// lets its width follow its own aspect. The sources are nothing like square - Numbness is
+    /// 128x85, Crab is 295x468 - so capping the long side gave a wide icon fewer vertical
+    /// pixels than a tall one for the same drawn height.
     ///
-    /// The game's own icons are 512x512, which is thirty times what a default 20pt line
-    /// needs, and packing them at that size cost a 4096x4096 atlas - 64 MB of texture for
-    /// twenty-five glyphs. Nothing about that was visible on screen.
+    /// 128 covers the whole config range with room to spare. An icon draws at
+    /// <c>IconScale x Font Size x canvas scale</c>, which is about 40 pixels at the default 20
+    /// on a HiDPI display and about 145 at the maximum 72 - so the only case this does not
+    /// cover outright is the largest font on the largest display, where it upscales slightly.
+    /// The atlas lands at 1024x512, two megabytes.
+    ///
+    /// <b>This was briefly derived per-build from the live Font Size and canvas scale</b>, with
+    /// the atlas repacking whenever either moved. That existed to chase a sharpness problem
+    /// which turned out to be the artwork rather than the resolution - see <see cref="Sharpen"/>
+    /// - so it was buying a smaller atlas and nothing else, at the price of an expensive scene
+    /// scan hanging off a config slider. A constant is the right shape for it.
     /// </summary>
-    private const int MaxIconPixels = 128;
+    private const int IconPixelHeight = 128;
+
+    /// <summary>
+    /// The sharpness the live atlas was baked with. Baked in rather than applied at render
+    /// time, so moving the setting has to repack - the same reason a size change does.
+    /// </summary>
+    internal static float BuiltForSharpness { get; private set; }
+
+    /// <summary>Whether the live atlas still matches the settings that produced it.</summary>
+    internal static bool MatchesSettings =>
+        Mathf.Approximately(BuiltForSharpness, PluginConfig.IconSharpness.Value);
 
     private static int attempts;
     private static float nextAttempt;
@@ -569,6 +588,43 @@ internal static class StatusIcons
     }
 
     /// <summary>
+    /// Steepens an icon's alpha ramp around its midpoint, tightening the edge.
+    ///
+    /// The game authors these icons for a much larger display than a line of overlay text: a
+    /// status icon is pure white in RGB with the entire shape carried in alpha, and nearly as
+    /// many of its pixels are part-transparent as are solid. Drawn at forty-odd pixels that
+    /// reads as a soft, muddy glyph.
+    ///
+    /// <b>None of that is the mod's doing</b>, which took some finding. A copy of the game's
+    /// own texture at 1:1, uncropped and unscaled, is exactly as soft as the packed one - so
+    /// the atlas resolution, the packer and the sampling were all innocent, and no amount of
+    /// packing an icon larger ever helped.
+    ///
+    /// Runs after the downscale rather than before it, because the downscale softens the edge
+    /// again and this is what puts it back. Applied to every icon: a feathered alpha boundary
+    /// is an artefact of the authoring size whatever the artwork inside it is, and hardening
+    /// it only ever moves the silhouette's own edge.
+    /// </summary>
+    private static void Sharpen(Texture2D copy)
+    {
+        float strength = PluginConfig.IconSharpness.Value;
+        if (strength <= 1f)
+        {
+            return;
+        }
+
+        Color32[] pixels = copy.GetPixels32();
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            float alpha = Mathf.Clamp01(((pixels[i].a / 255f) - 0.5f) * strength + 0.5f);
+            pixels[i].a = (byte)Mathf.RoundToInt(alpha * 255f);
+        }
+
+        copy.SetPixels32(pixels);
+        copy.Apply();
+    }
+
+    /// <summary>
     /// Whether an icon should take the colour of the text beside it.
     ///
     /// TMP's <c>tint=1</c> multiplies the sprite by the surrounding text colour. That is
@@ -632,12 +688,14 @@ internal static class StatusIcons
         // Whether each icon's own art is already coloured, decided by looking at it rather
         // than by keeping a list that would rot. See ShouldTint for why it matters.
         bool[] tintable = new bool[icons.Count];
+
         try
         {
             for (int i = 0; i < icons.Count; i++)
             {
-                copies[i] = MakeReadable(icons[i].Texture, icons[i].Region);
+                copies[i] = MakeReadable(icons[i].Texture, icons[i].Region, IconPixelHeight);
                 tintable[i] = ShouldTint(copies[i]);
+                Sharpen(copies[i]);
             }
 
             atlas = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false);
@@ -674,13 +732,33 @@ internal static class StatusIcons
                 string name = icons[i].Name;
                 Rect uv = uvs[i];
 
-                // The packed cell is the glyph. MakeReadable cropped each copy to its own
-                // sprite rect, so there is no sub-rect left to map, and PackTextures shrinking
-                // a texture to make it fit no longer needs accounting for either.
+                // The packed cell is the glyph, because MakeReadable cropped each copy to its
+                // own sprite rect - so there is no sub-rect left to map.
+                //
+                // The *size* is taken from the copy rather than from the packer's UV rect,
+                // which is a difference that grows as the cells shrink. Rounding
+                // uv.width x atlas.width back to whole texels can land a pixel out, and a
+                // glyph rect one pixel wrong does not crop the sprite - it rescales it, so
+                // every texel afterwards is sampled off-grid and the whole icon softens. One
+                // pixel in 495 is nothing; one in 28 is nearly four percent.
+                //
+                // The copy's own dimensions are exact and already known. They can only
+                // disagree with the packed cell if PackTextures had to shrink something to
+                // fit, which needs saying rather than silently absorbing.
                 int x = Mathf.RoundToInt(uv.x * atlas.width);
                 int y = Mathf.RoundToInt(uv.y * atlas.height);
-                int w = Mathf.Max(1, Mathf.RoundToInt(uv.width * atlas.width));
-                int h = Mathf.Max(1, Mathf.RoundToInt(uv.height * atlas.height));
+                int w = copies[i].width;
+                int h = copies[i].height;
+
+                int packedWidth = Mathf.RoundToInt(uv.width * atlas.width);
+                if (Mathf.Abs(packedWidth - w) > 1)
+                {
+                    Plugin.Log.LogWarning(
+                        $"Atlas packing scaled '{name}' from {w}px to {packedWidth}px wide; "
+                        + "its glyph will be sampled from the packed size instead.");
+                    w = Mathf.Max(1, packedWidth);
+                    h = Mathf.Max(1, Mathf.RoundToInt(uv.height * atlas.height));
+                }
 
                 TMP_SpriteGlyph glyph = new TMP_SpriteGlyph
                 {
@@ -703,6 +781,7 @@ internal static class StatusIcons
             spriteAsset = asset;
 
             ApplyMetrics();
+            BuiltForSharpness = PluginConfig.IconSharpness.Value;
 
             // Runtime-generated assets belong to no scene, so a scene load would otherwise
             // unload them and leave the text pointing at freed sprites - which TMP draws as
@@ -728,8 +807,41 @@ internal static class StatusIcons
                 }
             }
 
-            Plugin.Log.LogInfo($"Status icons ready: {icons.Count} packed into a {atlas.width}x{atlas.height} atlas. "
-                + $"Drawn in their own colours (untinted): {(ownColours.Count == 0 ? "none" : string.Join(", ", ownColours))}.");
+            // Named rather than counted, because the point of reading the palette off the
+            // game is that a difference means something: a long list says the sampling has
+            // latched onto the wrong Image, a short one says the game moved a colour and the
+            // overlay followed it.
+
+            // What each icon was *before* the copy shrank it. Packing smaller can only cost
+            // sharpness where there was sharpness to lose, so an icon whose source is already
+            // at or under MaxIconPixels looks the way it looks because of its artwork, and no
+            // amount of repacking will help it.
+            SortedDictionary<string, List<string>> sources = new();
+            for (int i = 0; i < icons.Count; i++)
+            {
+                Rect region = icons[i].Region;
+                string size = $"{Mathf.RoundToInt(region.width)}x{Mathf.RoundToInt(region.height)}";
+                if (!sources.TryGetValue(size, out List<string>? named))
+                {
+                    sources[size] = named = new List<string>();
+                }
+
+                named.Add(icons[i].Name);
+            }
+
+            List<string> summary = new();
+            foreach (KeyValuePair<string, List<string>> group in sources)
+            {
+                // The big groups are the norm and naming thirty icons helps nobody; the small
+                // ones are the outliers worth seeing.
+                summary.Add(group.Value.Count > 4
+                    ? $"{group.Key} x{group.Value.Count}"
+                    : $"{group.Key} ({string.Join(", ", group.Value)})");
+            }
+
+            Plugin.Log.LogInfo($"Status icons: {icons.Count} packed into a {atlas.width}x{atlas.height} atlas"
+                + $". Untinted: {(ownColours.Count == 0 ? "none" : string.Join(", ", ownColours))}."
+                + $" Colours: {EffectColors.SampleReport()}");
         }
         finally
         {
@@ -786,21 +898,24 @@ internal static class StatusIcons
 
     /// <summary>
     /// Copies one icon through the GPU so its pixels can be read back, cropped to
-    /// <paramref name="region"/> and shrunk to <see cref="MaxIconPixels"/> on its long side.
+    /// <paramref name="region"/> and shrunk to <paramref name="pixelHeight"/> pixels tall.
     ///
     /// Both of those ride along on the blit the readback already needed, so neither costs a
     /// pass. The crop is what lets <see cref="BuildAtlas"/> treat a packed cell as the glyph
     /// rect outright: the copy is the icon and nothing else, so there is no sub-rect left to
     /// map through the packer's own scaling.
     /// </summary>
-    private static Texture2D MakeReadable(Texture source, Rect region)
+    private static Texture2D MakeReadable(Texture source, Rect region, int pixelHeight)
     {
         int width = Mathf.Max(1, Mathf.RoundToInt(region.width));
         int height = Mathf.Max(1, Mathf.RoundToInt(region.height));
 
-        float shrink = Mathf.Min(1f, MaxIconPixels / (float)Mathf.Max(width, height));
-        int targetWidth = Mathf.Max(1, Mathf.RoundToInt(width * shrink));
-        int targetHeight = Mathf.Max(1, Mathf.RoundToInt(height * shrink));
+        // Never upscale. An icon whose art is already smaller than the height it is drawn at
+        // gains nothing from more texels and would only cost atlas space - the campfire and
+        // shield markers are about 60 pixels tall and hit this at any large Font Size.
+        float shrink = Mathf.Min(1f, pixelHeight / (float)height);
+        int copyWidth = Mathf.Max(1, Mathf.RoundToInt(width * shrink));
+        int copyHeight = Mathf.Max(1, Mathf.RoundToInt(height * shrink));
 
         RenderTexture previous = RenderTexture.active;
         RenderTexture step = Temporary(width, height);
@@ -815,20 +930,20 @@ internal static class StatusIcons
             // tap reads four texels, so a 4x reduction taken in a single step would miss
             // fifteen source pixels in every sixteen and alias the thin lines the status
             // silhouettes are mostly made of.
-            while (step.width >= targetWidth * 2 && step.height >= targetHeight * 2)
+            while (step.width >= copyWidth * 2 && step.height >= copyHeight * 2)
             {
                 step = Blit(step, step.width / 2, step.height / 2);
             }
 
-            if (step.width != targetWidth || step.height != targetHeight)
+            if (step.width != copyWidth || step.height != copyHeight)
             {
-                step = Blit(step, targetWidth, targetHeight);
+                step = Blit(step, copyWidth, copyHeight);
             }
 
             RenderTexture.active = step;
 
-            Texture2D readable = new Texture2D(targetWidth, targetHeight, TextureFormat.RGBA32, mipChain: false);
-            readable.ReadPixels(new Rect(0f, 0f, targetWidth, targetHeight), 0, 0);
+            Texture2D readable = new Texture2D(copyWidth, copyHeight, TextureFormat.RGBA32, mipChain: false);
+            readable.ReadPixels(new Rect(0f, 0f, copyWidth, copyHeight), 0, 0);
             readable.Apply();
             return readable;
         }
@@ -877,8 +992,21 @@ internal static class StatusIcons
 
         spriteAsset = null;
         atlas = null;
+        BuiltForSharpness = 0f;
         Tags.Clear();
         Glyphs.Clear();
+
+        // Aspects is indexed in step with Glyphs by ApplyMetrics, so leaving it behind while
+        // clearing Glyphs makes the next build read the previous one's shapes: the list grows
+        // by an atlas each rebuild and every glyph takes its width from the stale entry at the
+        // same index. It survived only because a rebuild used to pack the same icons in the
+        // same order, which stopped being true the moment the set could vary.
+        Aspects.Clear();
+
+        // The palette is read on the same walk that builds the icons, so it is only ever as
+        // fresh as this build. Dropping it here keeps a hot reload or a rebuilt HUD from
+        // carrying colours forward from a scene that no longer exists.
+        EffectColors.ClearSamples();
     }
 
     private static string lastLogged = "";
