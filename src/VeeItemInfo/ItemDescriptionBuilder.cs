@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+// There is a second, unrelated Affliction type in the global namespace. Alias the one we
+// mean so it can never be resolved against that by accident.
+using PeakAffliction = Peak.Afflictions.Affliction;
+
 namespace VeeItemInfo;
 
 /// <summary>
@@ -547,7 +551,28 @@ internal static class ItemDescriptionBuilder
     private static void DescribeApplyAffliction(Component component, Parts parts)
     {
         Action_ApplyAffliction effect = (Action_ApplyAffliction)component;
-        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.affliction));
+        CollectAfflictions(parts, effect.affliction, effect.extraAfflictions);
+    }
+
+    /// <summary>
+    /// The main affliction and the extras applied straight after it. Every
+    /// Action_ApplyAffliction carries both, and only the mass variant used to read the
+    /// second - in 2.1.a only the Cursed Skull fills it, but a base handler dropping what a
+    /// derived one keeps is the kind of gap that goes quiet rather than failing.
+    /// </summary>
+    private static void CollectAfflictions(Parts parts, PeakAffliction? affliction,
+        PeakAffliction[]? extras)
+    {
+        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(affliction));
+        if (extras == null)
+        {
+            return;
+        }
+
+        foreach (PeakAffliction extra in extras)
+        {
+            Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(extra));
+        }
     }
     private static void DescribeNumb(Component component, Parts parts)
     {
@@ -716,7 +741,11 @@ internal static class ItemDescriptionBuilder
     }
     private static void DescribeShelfShroom(Component component, Parts parts)
     {
-        Collect(parts.Effects, parts.Source, DescribeHealingShroom((ShelfShroom)component));
+        // Remedy Fungus. There is no eat-it effect at all - the only way to use it is to
+        // throw it, and the explosion is what heals - so every figure here is the thrown one.
+        // The 2.1.a spawn holds one healing blast and two AOEs re-firing every half second
+        // for as long as it lives; no radius, because the reach is not what a player acts on.
+        DescribeBlasts(((ShelfShroom)component).instantiateOnBreak, parts, showRange: false);
     }
     private static void DescribeMoraleBoost(Component component, Parts parts)
     {
@@ -753,29 +782,9 @@ internal static class ItemDescriptionBuilder
             EffectFormatter.Effect(HeldDynamiteInjury, "Injury"),
             Onset.Instant, "Injury", HeldDynamiteInjury);
 
-        // GetComponentInChildren, and guarded: this used to be a bare GetComponent on the
-        // prefab root, which would have thrown straight through Build and blanked the whole
-        // overlay the day the AOE moved down a level.
-        AOE? aoe = effect.explosionPrefab == null
-            ? null
-            : effect.explosionPrefab.GetComponentInChildren<AOE>(true);
-        if (aoe == null)
-        {
-            return;
-        }
-
-        float injury = Blast.Delivered(aoe, aoe.statusAmount);
-        if (injury == 0f)
-        {
-            return;
-        }
-
         // The reach trails the amount, the same shape Scout's Initiative uses for its own
         // area effect. It is also what tells this line apart from the one above at a glance.
-        Collect(parts.Effects, parts.Source,
-            EffectFormatter.Token(injury, "Injury")
-                + EffectColors.Neutral + " " + EffectFormatter.PeakMetres(aoe.range) + "</color>",
-            Onset.Instant, "Injury", injury);
+        DescribeBlasts(effect.explosionPrefab, parts, showRange: true);
     }
     private static void DescribeSpawn(Component component, Parts parts)
     {
@@ -792,18 +801,63 @@ internal static class ItemDescriptionBuilder
         // on the spawned prefab, four seconds, beside the ninety the protection lasts - and two
         // durations on one item read as a puzzle rather than as information. How long the spray
         // hangs in the air is not something a player acts on; how long they are covered is.
-        Action_Spawn effect = (Action_Spawn)component;
-        if (effect.objectToSpawn == null)
+        DescribeBlasts(((Action_Spawn)component).objectToSpawn, parts, showRange: false);
+    }
+
+    /// <summary>
+    /// Everything the AOEs in a spawned prefab do: each status they move, as one hit or as a
+    /// rate where the blast repeats, and any affliction they hand out.
+    ///
+    /// One reader for dynamite, Remedy Fungus and Sunscreen. There were three, and each read
+    /// a different part of an AOE - the first took one blast's amount and called it Injury
+    /// without looking, the second read statuses but never the affliction, the third the
+    /// affliction but never the statuses. Any prefab change on the unread side went unreported.
+    ///
+    /// GetComponentsInChildren with includeInactive, and guarded: this used to be a bare
+    /// GetComponent on the prefab root, which would have thrown straight through Build and
+    /// blanked the whole overlay the day the AOE moved down a level.
+    /// </summary>
+    private static void DescribeBlasts(GameObject? prefab, Parts parts, bool showRange)
+    {
+        if (prefab == null)
         {
             return;
         }
 
-        foreach (AOE aoe in effect.objectToSpawn.GetComponentsInChildren<AOE>(true))
+        foreach (AOE aoe in prefab.GetComponentsInChildren<AOE>(true))
         {
+            // A repeating TimeEvent on the same object turns a one-off burst into a field you
+            // stand in. Remedy Fungus is both: one blast that heals as it goes off, and two
+            // AOEs re-firing every half second for as long as the spawn lives.
+            TimeEvent? repeat = aoe.GetComponent<TimeEvent>();
+            bool ticking = repeat != null && repeat.repeating && repeat.rate > 0f;
+            float seconds = ticking ? Lifetime(aoe.transform) : 0f;
+            string reach = showRange
+                ? EffectColors.Neutral + " " + EffectFormatter.PeakMetres(aoe.range) + "</color>"
+                : "";
+
+            List<EffectLine> lines = new();
+            AddBlast(lines, aoe, aoe.statusType, aoe.statusAmount, repeat, seconds, reach);
+
+            for (int j = 0; aoe.addtlStatus != null && j < aoe.addtlStatus.Length; j++)
+            {
+                // Each additional status uses its own override where one is given, and the
+                // main amount otherwise - the same fallback Explode does.
+                float amount = aoe.addlStatusAmountOverrides != null
+                    && j < aoe.addlStatusAmountOverrides.Count
+                        ? aoe.addlStatusAmountOverrides[j]
+                        : aoe.statusAmount;
+                AddBlast(lines, aoe, aoe.addtlStatus[j], amount, repeat, seconds, reach);
+            }
+
+            // An AOE flagged hasAffliction hands its affliction to whoever it catches - for
+            // Sunscreen that is where the protection and its duration actually are.
             if (aoe.hasAffliction && aoe.affliction != null)
             {
-                Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(aoe.affliction));
+                lines.AddRange(EffectFormatter.Affliction(aoe.affliction));
             }
+
+            Collect(parts.Effects, parts.Source, lines);
         }
     }
     private static void DescribeScorpion(Component component, Parts parts)
@@ -925,7 +979,7 @@ internal static class ItemDescriptionBuilder
         // real affliction as well as a cost. The Action_ApplyAffliction branch above
         // matches on exact type and so never sees a subclass - this is the only
         // place that affliction is read.
-        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(superJump.affliction));
+        CollectAfflictions(parts, superJump.affliction, superJump.extraAfflictions);
         // AddStatus takes a 0-1 fraction like every other status, but petrify is
         // floored to whole points on the way in - this read +7.5 where the game gives
         // you 7.
@@ -1091,49 +1145,6 @@ internal static class ItemDescriptionBuilder
     }
 
     /// <summary>
-    /// Remedy Fungus. There is no eat-it effect at all - the only way to use it is to throw
-    /// it, and the explosion is what heals - so every figure here is the thrown one.
-    ///
-    /// Every AOE in the prefab it breaks into, found by walking for the component rather than
-    /// by name. The old walk reached through four hardcoded child names and threw when one of
-    /// them went missing, which is exactly what happened: in 2.1.a the spawn holds a single
-    /// healing AOE and the poison child the code went looking for is gone.
-    /// </summary>
-    private static List<EffectLine> DescribeHealingShroom(ShelfShroom effect)
-    {
-        List<EffectLine> lines = new();
-        if (effect.instantiateOnBreak == null)
-        {
-            return lines;
-        }
-
-        foreach (AOE aoe in effect.instantiateOnBreak.GetComponentsInChildren<AOE>(true))
-        {
-            // A repeating TimeEvent on the same object turns a one-off burst into a field you
-            // stand in. Remedy Fungus is both: one blast that heals as it goes off, and two
-            // AOEs re-firing every half second for as long as the spawn lives.
-            TimeEvent? repeat = aoe.GetComponent<TimeEvent>();
-            bool ticking = repeat != null && repeat.repeating && repeat.rate > 0f;
-            float seconds = ticking ? Lifetime(aoe.transform) : 0f;
-
-            AddBlast(lines, aoe, aoe.statusType, aoe.statusAmount, repeat, seconds);
-
-            for (int j = 0; aoe.addtlStatus != null && j < aoe.addtlStatus.Length; j++)
-            {
-                // Each additional status uses its own override where one is given, and the
-                // main amount otherwise - the same fallback Explode does.
-                float amount = aoe.addlStatusAmountOverrides != null
-                    && j < aoe.addlStatusAmountOverrides.Count
-                        ? aoe.addlStatusAmountOverrides[j]
-                        : aoe.statusAmount;
-                AddBlast(lines, aoe, aoe.addtlStatus[j], amount, repeat, seconds);
-            }
-        }
-
-        return lines;
-    }
-
-    /// <summary>
     /// How long a spawned effect lasts, from the nearest RemoveAfterSeconds at or above it.
     /// Zero where nothing sets a lifetime, which reads as "no duration to state".
     ///
@@ -1155,14 +1166,20 @@ internal static class ItemDescriptionBuilder
     /// through AdjustStatus, so that coupling reaches here exactly as it reaches a lantern.
     /// </summary>
     private static void AddBlast(List<EffectLine> lines, AOE aoe,
-        CharacterAfflictions.STATUSTYPE statusType, float amount, TimeEvent? repeat, float seconds)
+        CharacterAfflictions.STATUSTYPE statusType, float amount, TimeEvent? repeat, float seconds,
+        string suffix)
     {
         string status = statusType.ToString();
 
         if (repeat == null || !repeat.repeating || repeat.rate <= 0f)
         {
-            Collect(lines, 0, EffectFormatter.Effect(Blast.Delivered(aoe, amount), status),
-                Onset.Instant, status, amount);
+            // Token rather than Effect, so the reach can trail the figure on the same line.
+            float delivered = Blast.Delivered(aoe, amount);
+            if (delivered != 0f)
+            {
+                Collect(lines, 0, EffectFormatter.Token(delivered, status) + suffix,
+                    Onset.Instant, status, amount);
+            }
         }
         else
         {
@@ -1173,7 +1190,7 @@ internal static class ItemDescriptionBuilder
 
         if (CuresSporesToo(statusType, amount))
         {
-            AddBlast(lines, aoe, CharacterAfflictions.STATUSTYPE.Spores, amount, repeat, seconds);
+            AddBlast(lines, aoe, CharacterAfflictions.STATUSTYPE.Spores, amount, repeat, seconds, suffix);
         }
     }
 
