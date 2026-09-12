@@ -249,8 +249,13 @@ internal static class StatusIcons
             item.GetComponent<RopeSpool>() is RopeSpool spool && spool.isAntiRope));
 
         // "You float." Scout's Initiative drops your gravity rather than granting speed, and a
-        // balloon is the game's own picture of that - no status icon exists for it.
-        AddItemIcon(icons, seen, "Float", FirstItemWith(item => item.GetComponent<Balloon>() != null));
+        // balloon is the game's own picture of that - no status icon exists for it. Two
+        // pictures, in fact, told apart by the component's own isBunch: a single balloon for
+        // a little lift, the bunch for three balloons' worth or more.
+        AddItemIcon(icons, seen, "Float", FirstItemWith(item =>
+            item.GetComponent<Balloon>() is Balloon balloon && !balloon.isBunch));
+        AddItemIcon(icons, seen, "FloatBunch", FirstItemWith(item =>
+            item.GetComponent<Balloon>() is Balloon balloon && balloon.isBunch));
 
         // Every item that another item turns into. Added last, so a status keeps its key if
         // an item ever shares the name.

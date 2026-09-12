@@ -185,6 +185,9 @@ internal static class ItemDescriptionBuilder
         { typeof(Action_ApplyMassAffliction), DescribeApplyMassAffliction },
         { typeof(Action_RaycastDart), DescribeRaycastDart },
         { typeof(Lantern), DescribeLanternItem },
+        // A lit candle keeps a StatusField switched on exactly as a lantern does - it
+        // removes drowsiness within its reach - so it reads through the same walk.
+        { typeof(Candle), DescribeLanternItem },
         { typeof(Constructable), DescribeConstructable },
         { typeof(RopeShooter), DescribeRopeShooter },
         { typeof(VineShooter), DescribeVineShooter },
@@ -630,12 +633,27 @@ internal static class ItemDescriptionBuilder
         // The "NEARBY PLAYERS WILL RECEIVE:" header is gone. Nothing replaces it -
         // the effects speak for themselves, and a header was a whole line of English
         // for a distinction no item ever needs stated twice.
+        //
+        // ignoreCaster - the Cursed Skull and the Magic Bugle - hands the effect to everyone
+        // nearby except you. Not marked: the skull's ??? already says it is unusual, and the
+        // bugle's line below is about the crowd by construction.
         Action_ApplyMassAffliction effect = (Action_ApplyMassAffliction)component;
-        Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.affliction));
-        for (int j = 0; j < effect.extraAfflictions.Length; j++)
+
+        // A Magic Bugle re-fires this every tenth of a second for as long as it is tooted,
+        // so the affliction's own half-second is not a duration anybody experiences: the
+        // stamina is infinite while the horn sounds. The reach is the point and is shown;
+        // the skull's 900 units means "everyone" and is not.
+        MagicBugle? bugle = parts.Item.GetComponent<MagicBugle>();
+        if (bugle != null && bugle.massAffliction == effect)
         {
-            Collect(parts.Effects, parts.Source, EffectFormatter.Affliction(effect.extraAfflictions[j]));
+            Collect(parts.Effects, parts.Source,
+                EffectFormatter.Colored(EffectFormatter.Infinity, "Extra Stamina")
+                + EffectColors.Neutral + " " + EffectFormatter.PeakMetres(effect.radius) + "</color>",
+                Onset.OverTime, "Extra Stamina", 1f);
+            return;
         }
+
+        CollectAfflictions(parts, effect.affliction, effect.extraAfflictions);
     }
     private static void DescribeRaycastDart(Component component, Parts parts)
     {
