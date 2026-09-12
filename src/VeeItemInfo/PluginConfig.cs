@@ -32,6 +32,12 @@ internal static class PluginConfig
     internal static ConfigEntry<bool> RealRopeLength = null!;
     internal static ConfigEntry<bool> DebugLogging = null!;
 
+    /// <summary>
+    /// A one-shot: ticking it writes every item in the database, with its components and
+    /// what the overlay would say for it, to a file beside the log, then unticks itself.
+    /// </summary>
+    internal static ConfigEntry<bool> DumpItems = null!;
+
     // One toggle per section of the overlay, so a player who only cares about weight can
     // have just that. Defaults are all on - the mod's whole purpose is the information.
     internal static ConfigEntry<bool> ShowCustom = null!;
@@ -84,11 +90,23 @@ internal static class PluginConfig
             + "this is consistent with all other distances in the game but breaks parity with Rope Spool");
         DebugLogging = config.Bind(Behaviour, "Debug Logging", false,
             "Debug logging. Keep off unless you're diagnosing problems.");
+        DumpItems = config.Bind(Behaviour, "Dump Item Database", false,
+            "Tick to write every item, its components and its overlay text to "
+            + "BepInEx/VeeItemInfo-items.txt. Unticks itself once written.");
 
         // Re-apply on change so the overlay can be styled and positioned while the game
         // is running, instead of a rebuild-and-relaunch for every nudge.
         config.SettingChanged += (_, _) =>
         {
+            // Reset before writing, so a throw inside the dump cannot leave the box ticked
+            // and re-run it on every later setting change. Setting it fires this handler
+            // again with the value false, which does nothing.
+            if (DumpItems.Value)
+            {
+                DumpItems.Value = false;
+                ItemDump.Write();
+            }
+
             Overlay.ApplyStyle();
             ItemInfoController.MarkDirty();
         };

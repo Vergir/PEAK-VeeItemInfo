@@ -19,14 +19,23 @@ internal static class ItemDebug
     /// </summary>
     internal static void LogItem(Item item)
     {
-        GameObject itemGameObj = item.gameObject;
-        if (itemGameObj.name == lastLogged)
+        if (item.gameObject.name == lastLogged)
         {
             return;
         }
 
-        lastLogged = itemGameObj.name;
+        lastLogged = item.gameObject.name;
+        Plugin.Log.LogInfo(Components(item));
+    }
 
+    /// <summary>
+    /// The item's name, tags and every component on it, with the fields that drive the
+    /// description. Shared by the held-item log and the whole-database dump, so the two can
+    /// never disagree about what a component is worth printing.
+    /// </summary>
+    internal static string Components(Item item)
+    {
+        GameObject itemGameObj = item.gameObject;
         StringBuilder report = new();
         report.Append($"[item] {itemGameObj.name} carryWeight={item.carryWeight} tags={item.itemTags}");
 
@@ -62,7 +71,7 @@ internal static class ItemDebug
             report.Append(Values(component));
         }
 
-        Plugin.Log.LogInfo(report.ToString());
+        return report.ToString();
     }
 
     private static string lastAudited = "";
@@ -166,7 +175,18 @@ internal static class ItemDebug
             + $" ifSkeleton={a.ifSkeleton}",
         Action_InflictPoison a => $" perSecond={a.poisonPerSecond} time={a.inflictionTime} delay={a.delay}",
         Action_AddOrRemoveThorns a => $" thornCount={a.thornCount}",
-        Action_ApplyAffliction a => $" affliction={a.affliction?.GetAfflictionType()}",
+        // Derived types first: a pattern switch takes the first match, and both of these
+        // are Action_ApplyAffliction too.
+        Peak.Action_SuperJumpAmulet a => $" petrifyPerUse={a.petrifyPerUse}"
+            + $" affliction={Affliction(a.affliction)} extra=[{Afflictions(a.extraAfflictions)}]",
+        Action_ApplyMassAffliction a => $" radius={a.radius} ignoreCaster={a.ignoreCaster}"
+            + $" affliction={Affliction(a.affliction)} extra=[{Afflictions(a.extraAfflictions)}]",
+        Action_ApplyAffliction a => $" affliction={Affliction(a.affliction)}"
+            + $" extra=[{Afflictions(a.extraAfflictions)}]",
+        Action_RaycastDart a => $" maxDistance={a.maxDistance} onHit=[{Afflictions(a.afflictionsOnHit)}]",
+        Action_MoraleBoost a => $" radius={a.boostRadius} baseline={a.baselineStaminaBoost}"
+            + $" perScout={a.staminaBoostPerAdditionalScout}",
+        Action_Numb a => $" numbAmount={a.numbAmount}",
         Action_RandomMushroomEffect a => $" mushroomTypeIndex={a.mushroomTypeIndex}",
         Action_ClearAllStatus a => $" excludeCurse={a.excludeCurse}"
             + $" otherExclusions=[{string.Join(", ", a.otherExclusions)}]",
@@ -182,14 +202,109 @@ internal static class ItemDebug
             + $" unitsToMeters={CharacterStats.unitsToMeters}"
             + $" achievementMetres={Rope.GetLengthInMeters(a.length)}"
             + RopeScales(a),
-        RopeSpool a => $" fuel={a.RopeFuel} startFuel={a.ropeStartFuel}"
-            + $" metres={Rope.GetLengthInMeters(a.RopeFuel)} anti={a.isAntiRope}",
+        // RopeFuel goes through GetData, which needs a live instance - on a database
+        // prefab it throws. A prefab has no scene, which is how the two are told apart.
+        RopeSpool a => (a.gameObject.scene.IsValid()
+                ? $" fuel={a.RopeFuel} metres={Rope.GetLengthInMeters(a.RopeFuel)}"
+                : " fuel=<prefab>")
+            + $" startFuel={a.ropeStartFuel} anti={a.isAntiRope}",
+        MagicBugle a => $" totalTootTime={a.totalTootTime} initialTootCost={a.initialTootCost}",
         Peak.RitualDaggerFeedBehavior a => $" bonusStamina={a.bonusStamina}"
             + $" infiniteStaminaTime={a.infiniteStaminaTime}",
         ItemCooking c => $" canBeCooked={c.canBeCooked} wreck={c.wreckWhenCooked} preCooked={c.preCooked}"
             + $" behaviours={c.additionalCookingBehaviors.Length} explosionPrefab={(c.explosionPrefab == null ? "<none>" : c.explosionPrefab.name)}",
+        Scorpion a => $" totalPoisonTime={a.totalPoisonTime}",
+        Dynamite a => $" fuse={a.startingFuseTime} lightFuseRadius={a.lightFuseRadius}"
+            + Prefab(" explodes", a.explosionPrefab),
+        Constructable a => $" maxConstructDistance={a.maxConstructDistance}"
+            + Prefab(" builds", a.constructedPrefab),
+        Lantern a => $" startingFuel={a.startingFuel}" + Field(a.gameObject),
+        Candle a => $" startingFuel={a.startingFuel}" + Field(a.gameObject),
+        Peak.Action_HealingGem a => $" heal={Affliction(a.healingAffliction)}"
+            + $" shield={Affliction(a.invincibilityAffliction)}"
+            + $" ratio={a.healingToPetrifyRatio} petrify={a.minPetrify}-{a.maxPetrify}",
+        Peak.Action_CloneSelectedItem a => $" petrify={a.petrify} mystical={a.petrifyMystical} range={a.range}",
+        Peak.AmuletBase a => $" amuletIndex={a.amuletIndex} startActive={a.startActive}",
         _ => "",
     };
+
+    /// <summary>One affliction's type and the numbers on it, or "&lt;none&gt;".</summary>
+    private static string Affliction(Peak.Afflictions.Affliction? affliction)
+    {
+        if (affliction == null)
+        {
+            return "<none>";
+        }
+
+        string detail = affliction switch
+        {
+            Peak.Afflictions.Affliction_FasterBoi a => $" drowsyOnEnd={a.drowsyOnEnd}",
+            Peak.Afflictions.Affliction_InfiniteStamina a => $" climbDelay={a.climbDelay}"
+                + $" drowsy={Affliction(a.drowsyAffliction)}",
+            Peak.Afflictions.Affliction_AddBonusStamina a => $" stamina={a.staminaAmount}",
+            Peak.Afflictions.Affliction_AdjustStatus a => $" {a.statusType}={a.statusAmount}",
+            Peak.Afflictions.Affliction_AdjustDrowsyOverTime a => $" perSecond={a.statusPerSecond}",
+            Peak.Afflictions.Affliction_AdjustColdOverTime a => $" perSecond={a.statusPerSecond}",
+            Peak.Afflictions.Affliction_AdjustStatusOverTime a => $" perSecond={a.statusPerSecond}",
+            Peak.Afflictions.Affliction_PoisonOverTime a => $" perSecond={a.statusPerSecond} delay={a.delayBeforeEffect}",
+            Peak.Afflictions.Affliction_ClearAllStatus a => $" excludeCurse={a.excludeCurse}",
+            Peak.Afflictions.Affliction_HealAll a => $" maxHealing={a.maxHealing}",
+            Peak.Afflictions.Affliction_RadiateInfiniteStam a => $" radius={a.radius}",
+            Peak.Afflictions.Affliction_MassSuperJump a => $" radius={a.radius}"
+                + $" lowGrav={a.lowGravAmount} lowGravTime={a.lowGravTime}",
+            Peak.Afflictions.Affliction_LowGravity a => $" lowGrav={a.lowGravAmount}",
+            _ => "",
+        };
+
+        return $"{affliction.GetAfflictionType()}(totalTime={affliction.totalTime}{detail})";
+    }
+
+    private static string Afflictions(Peak.Afflictions.Affliction[]? afflictions)
+    {
+        if (afflictions == null)
+        {
+            return "";
+        }
+
+        List<string> parts = new();
+        foreach (Peak.Afflictions.Affliction affliction in afflictions)
+        {
+            parts.Add(Affliction(affliction));
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>A prefab the component instantiates, walked for what it holds.</summary>
+    private static string Prefab(string label, GameObject? prefab)
+    {
+        if (prefab == null)
+        {
+            return $"{label}=<none>";
+        }
+
+        StringBuilder tree = new($"{label}={prefab.name}");
+        foreach (Component component in prefab.GetComponents(typeof(Component)))
+        {
+            if (component != null && !(component is Transform))
+            {
+                tree.Append(" | ").Append(component.GetType().Name).Append(PrefabValues(component));
+            }
+        }
+
+        Describe(tree, prefab.transform, MaxPrefabDepth);
+        return tree.ToString();
+    }
+
+    /// <summary>
+    /// The status field a lit lantern or candle switches on, found the way DescribeLantern
+    /// finds it - so the dump shows exactly what that reader would see.
+    /// </summary>
+    private static string Field(GameObject item)
+    {
+        StatusField? field = item.GetComponentInChildren<StatusField>(true);
+        return field == null ? " field=<none>" : $" field={field.name}" + PrefabValues(field);
+    }
 
     /// <summary>
     /// What this run dealt the berry in hand, and the whole table behind it.
@@ -457,6 +572,8 @@ internal static class ItemDebug
                 ? $" affliction={a.affliction.GetAfflictionType()} totalTime={a.affliction.totalTime}"
                 : "")
             + $" factorPow={a.factorPow} ignoreFactor={a.ignoreFactor}"
+            + (string.IsNullOrEmpty(a.illegalStatus) ? "" : $" illegalStatus={a.illegalStatus}")
+            + (a.cooksItems ? " cooksItems" : "")
             + (a.addtlStatus != null && a.addtlStatus.Length > 0
                 ? $" addtl=[{string.Join(", ", a.addtlStatus)}]"
                     + $" overrides=[{string.Join(", ", a.addlStatusAmountOverrides ?? new List<float>())}]"
@@ -468,6 +585,7 @@ internal static class ItemDebug
                 + $" timeBetweenTicks={s.timeBetweenTicks}" : ""),
         TimeEvent t => $" rate={t.rate} repeating={t.repeating}",
         RemoveAfterSeconds r => $" seconds={r.seconds}",
+        Campfire c => $" burnsFor={c.burnsFor} moraleRadius={c.moraleBoostRadius}",
         _ => "",
     };
 
