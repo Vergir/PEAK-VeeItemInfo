@@ -889,7 +889,13 @@ internal static class ItemDescriptionBuilder
         // max(0.5, (1 - statusSum) + 0.05). statusSum runs 0..1, so the over-time
         // part spans 50 at full status to 105 at none - more damage the healthier
         // you are. The instant 2.5 is folded in rather than shown separately.
-        Collect(parts.Effects, parts.Source, EffectFormatter.Colored("50-105", "Poison")
+        //
+        // Both bounds are literals inside the method body with nothing exposing them, so
+        // they are literals here too - as fractions, so the status scale still applies.
+        const float MinPoison = 0.5f;
+        const float MaxPoison = 1.05f;
+        Collect(parts.Effects, parts.Source, EffectFormatter.Colored(
+                EffectFormatter.Scaled(MinPoison) + "-" + EffectFormatter.Scaled(MaxPoison), "Poison")
             + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>",
             Onset.OverTime, "Poison", 1f);
     }
@@ -979,11 +985,13 @@ internal static class ItemDescriptionBuilder
         parts.Layout.Add(Block.Custom, generic
             + EffectColors.Neutral + EffectFormatter.Arrow + "</color>"
             + generic + generic);
-        // AddPetrify takes whole points on the 0-100 scale, unlike almost everything
-        // else here, so these are already display units. The two values are discrete
+        // AddPetrify takes whole points on the game's 0-100 scale, unlike almost everything
+        // else here, so they go through WholePoints as fractions rather than being printed
+        // raw - that keeps them on the configured status scale. The two values are discrete
         // - plain items versus mystical ones - so a slash, not a range.
         Collect(parts.Effects, parts.Source, EffectColors.Get("Petrify") + "+"
-            + EffectFormatter.Num(effect.petrify) + "/" + EffectFormatter.Num(effect.petrifyMystical)
+            + EffectFormatter.WholePoints(effect.petrify / 100f) + "/"
+            + EffectFormatter.WholePoints(effect.petrifyMystical / 100f)
             + " " + StatusIcons.Tag("Petrify") + "</color>",
             Onset.Instant, "Petrify", 1f);
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using Peak.Afflictions;
 using UnityEngine;
@@ -15,14 +16,50 @@ namespace VeeItemInfo;
 /// </summary>
 internal static class EffectFormatter
 {
-    /// <summary>One decimal place, with a pointless trailing ".0" trimmed off.</summary>
-    internal static string Num(float value) => value.ToString("F1").Replace(".0", "");
+    /// <summary>
+    /// A duration or distance: one decimal place, trailing zeros trimmed. Invariant culture,
+    /// because a comma decimal on a Russian locale would break "2,5 / 8s" into two figures.
+    /// </summary>
+    internal static string Num(float value) => Fixed(value, 1);
 
-    /// <summary>Status amounts are stored as 0-1 fractions but displayed on a 0-100 scale.</summary>
-    internal static string Scaled(float value) => Num(value * 100f);
+    private static string Fixed(float value, int decimals)
+    {
+        string text = value.ToString("F" + decimals, CultureInfo.InvariantCulture);
+        return text.Contains('.') ? text.TrimEnd('0').TrimEnd('.') : text;
+    }
 
     /// <summary>
-    /// Petrify, in the whole points the game actually gives you.
+    /// A status amount. Stored as a 0-1 fraction; shown on whatever scale Status Scale in
+    /// config says a full bar is - 100 by default.
+    ///
+    /// The decimals follow the scale so the game's step is never rounded away: the 0.025
+    /// step is 2.5 at 100, 0.25 at 10, 0.025 at 1, and 5 at 200 with no decimals at all.
+    /// </summary>
+    internal static string Scaled(float value) => Fixed(value * StatusScale, ScaleDecimals);
+
+    private static float StatusScale => PluginConfig.StatusScale.Value;
+
+    /// <summary>Fewest decimals that show one status step exactly, capped at three.</summary>
+    private static int ScaleDecimals
+    {
+        get
+        {
+            float step = GameValues.StatusStep * StatusScale;
+            for (int decimals = 0; decimals < 3; decimals++)
+            {
+                float shifted = step * Mathf.Pow(10f, decimals);
+                if (Mathf.Abs(shifted - Mathf.Round(shifted)) < 0.001f)
+                {
+                    return decimals;
+                }
+            }
+
+            return 3;
+        }
+    }
+
+    /// <summary>
+    /// Petrify, in the whole points the game actually gives you, then on the status scale.
     ///
     /// It is the one status that is not continuous. `CharacterData.petrifyAmount` is an
     /// `int`, and every route into it - `AddStatus`, `SetStatus`, `SubtractStatus` - runs
@@ -30,10 +67,13 @@ internal static class EffectFormatter
     /// `0.075` is **7**, and <see cref="Scaled"/> reporting 7.5 overstated every amulet whose
     /// cost was not a whole percent.
     ///
-    /// Floor, not round, because that is what the game does: 7.9 points is still 7.
+    /// Floor, not round, because that is what the game does: 7.9 points is still 7. The
+    /// floor is to whole points of the game's own 100-point scale; the display scale applies
+    /// after, so at a scale of 10 those 7 points read 0.7 - petrify lands on the same bar as
+    /// everything else and has to read on the same scale.
     /// </summary>
     internal static string WholePoints(float fraction) =>
-        Mathf.Floor(fraction * 100f).ToString("F0");
+        Scaled(Mathf.Floor(fraction * 100f) / 100f);
 
     /// <summary>
     /// A signed, coloured amount followed by the status icon - "+30 &lt;flame&gt;".
@@ -227,8 +267,14 @@ internal static class EffectFormatter
     /// A distance held in Unity units, shown in the metres a player reads. Radii, ranges and
     /// raycast lengths in the game are all Unity units, and printing one with an "m" after it
     /// understates the distance by well over a third.
+    ///
+    /// Show Unity Meters in config skips the conversion, for players who think in the units
+    /// every other measuring mod reports. The Rope Cannon's rope length reaches here only
+    /// when Show Real Rope Length is on; otherwise it prints the spool's own figure through
+    /// <see cref="Metres"/>, which this setting leaves alone.
     /// </summary>
-    internal static string PeakMetres(float unityUnits) => Metres(unityUnits * UnityUnitsToMetres);
+    internal static string PeakMetres(float unityUnits) =>
+        Metres(PluginConfig.UnityMetres.Value ? unityUnits : unityUnits * UnityUnitsToMetres);
 
     /// <summary>A duration, same no-space rule as <see cref="Metres"/>.</summary>
     internal static string Seconds(float value) => Num(value) + "s";
