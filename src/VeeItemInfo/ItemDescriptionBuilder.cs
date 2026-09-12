@@ -88,6 +88,13 @@ internal static class ItemDescriptionBuilder
             // CookingBehavior_DisableScripts sets enabled=false on the components it ruins.
             // Reading a disabled component is how a cooked poisonous berry kept advertising
             // poison it no longer inflicts.
+            // A missing script serializes as a null entry, and Stone ships one. Reading its
+            // type threw, which blanked the whole overlay rather than one line.
+            if (itemComponents[i] == null)
+            {
+                continue;
+            }
+
             if (itemComponents[i] is Behaviour behaviour && !behaviour.enabled)
             {
                 continue;
