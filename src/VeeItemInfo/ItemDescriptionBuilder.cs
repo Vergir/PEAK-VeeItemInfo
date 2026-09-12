@@ -356,7 +356,8 @@ internal static class ItemDescriptionBuilder
     /// <c>ldc.i4.0; ldc.i4.4; call int32 UnityEngine.Random::Range(int32, int32)</c>.
     /// A 4 appearing in the <c>stamAmts</c> table the item dump prints would disprove it.
     /// </summary>
-    private const float MaxMushroomStamina = 0.15f;
+    private const float MushroomStaminaPerRoll = 0.05f;
+    private const float MaxMushroomStamina = 3 * MushroomStaminaPerRoll;
 
     private static List<EffectLine> DescribeMushroom(Action_RandomMushroomEffect effect)
     {
@@ -379,9 +380,23 @@ internal static class ItemDescriptionBuilder
         //
         // Confirmed in game: the stamina does arrive. It was hidden on a report that it did
         // not, which a roll of 0 - a quarter of berries - looks exactly like.
-        lines.Add(new EffectLine(
-            EffectFormatter.Colored("+0-" + EffectFormatter.Scaled(MaxMushroomStamina), "Extra Stamina"),
-            Onset.Instant, "Extra Stamina", MaxMushroomStamina));
+        //
+        // Spoil Energy Increase in config prints the draw instead, read the way RunAction
+        // reads it: the dealt integer times the same 0.05 the span is built from. A draw of
+        // zero leaves no line, which is the truth about that berry.
+        if (PluginConfig.EnergySpoiler.Value && manager.mushroomStamAmt != null
+            && index < manager.mushroomStamAmt.Length)
+        {
+            float stamina = manager.mushroomStamAmt[index] * MushroomStaminaPerRoll;
+            Collect(lines, 0, EffectFormatter.Effect(stamina, "Extra Stamina"),
+                Onset.Instant, "Extra Stamina", stamina);
+        }
+        else
+        {
+            lines.Add(new EffectLine(
+                EffectFormatter.Colored("+0-" + EffectFormatter.Scaled(MaxMushroomStamina), "Extra Stamina"),
+                Onset.Instant, "Extra Stamina", MaxMushroomStamina));
+        }
 
         // GenerateEffectList fills the slots in order and spends its quotas first: the first
         // minGoodEffects slots are drawn from GoodEffects, the next minBadEffects from
@@ -392,13 +407,25 @@ internal static class ItemDescriptionBuilder
         // No status of its own, so the marker trails the stamina rather than claiming a place
         // among the ranked lines.
         string marker;
-        if (index < manager.minGoodEffects)
+        if (!PluginConfig.ShroomberryHint.Value)
+        {
+            marker = EffectColors.White + Marks + "</color>";
+        }
+        else if (index < manager.minGoodEffects)
         {
             marker = EffectColors.Positive + Marks + "</color>";
         }
         else if (index < manager.minGoodEffects + manager.minBadEffects)
         {
             marker = EffectColors.Negative + Marks + "</color>";
+        }
+        else if (PluginConfig.PurpleSpoiler.Value)
+        {
+            // The roll itself, read the way RunAction reads it, and judged by the game's own
+            // list of which effect ids are the good half.
+            int rolled = manager.mushroomEffects[index];
+            bool good = Array.IndexOf(Action_RandomMushroomEffect.GoodEffects, rolled) >= 0;
+            marker = (good ? EffectColors.Positive : EffectColors.Negative) + Marks + "</color>";
         }
         else
         {
