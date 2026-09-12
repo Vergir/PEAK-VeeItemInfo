@@ -103,6 +103,7 @@ internal static class ItemInfoController
         if (PluginConfig.DebugLogging.Value)
         {
             ItemDebug.LogItem(item);
+            ItemDump.WriteOnce();
         }
 
         string description = ItemDescriptionBuilder.Build(item);

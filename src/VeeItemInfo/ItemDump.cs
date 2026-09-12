@@ -21,6 +21,27 @@ internal static class ItemDump
 {
     private const string FileName = "VeeItemInfo-items.txt";
 
+    private static bool written;
+
+    /// <summary>
+    /// Writes the dump the first time this is called after debug logging was switched on.
+    /// Called from the held-item refresh, because holding an item is the one moment the
+    /// database is certain to be loaded - a switch-on in the menu screen would find nothing.
+    /// </summary>
+    internal static void WriteOnce()
+    {
+        if (written)
+        {
+            return;
+        }
+
+        written = true;
+        Write();
+    }
+
+    /// <summary>Arms the next <see cref="WriteOnce"/>, for a switch-off or a hot reload.</summary>
+    internal static void Forget() => written = false;
+
     internal static void Write()
     {
         string path = Path.Combine(Paths.BepInExRootPath, FileName);
