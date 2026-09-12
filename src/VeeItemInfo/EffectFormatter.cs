@@ -409,170 +409,231 @@ internal static class EffectFormatter
     }
 
     /// <summary>
-    /// Describes an affliction as keyed lines. Dispatches on
-    /// <see cref="Affliction.AfflictionType"/>; an unrecognised type returns nothing rather
-    /// than guessing.
+    /// Describes an affliction as keyed lines, by looking its type up in
+    /// <see cref="AfflictionHandlers"/>. An unrecognised type returns nothing rather than
+    /// guessing.
     ///
-    /// Every branch states its own <see cref="Onset"/>, and that is the point of the split:
+    /// Every handler states its own <see cref="Onset"/>, and that is the point of the split:
     /// afflictions used to be posted wholesale into the "timed" bucket, so
     /// Affliction_ClearAllStatus - which fires in OnApplied and is as instant as anything in
     /// the game - sorted below every instant line, while the identical Action_ClearAllStatus
     /// sorted above them.
     /// </summary>
-    internal static List<EffectLine> Affliction(PeakAffliction affliction)
+    internal static List<EffectLine> Affliction(PeakAffliction? affliction)
     {
         List<EffectLine> lines = new();
-
-        if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.FasterBoi)
+        if (affliction != null
+            && AfflictionHandlers.TryGetValue(affliction.GetAfflictionType(),
+                out Action<PeakAffliction, List<EffectLine>>? describe))
         {
-            // Three stamina icons for "you move faster", deliberately not the infinity mark:
-            // the stamina is not infinite here, only the movement is quicker, and reusing
-            // the infinity mark would say the wrong thing. The run and climb windows differ
-            // by climbDelay; the shorter one is the honest figure to show.
-            Affliction_FasterBoi effect = (Affliction_FasterBoi)affliction;
-            string text = EffectColors.Neutral + Seconds(effect.totalTime) + "</color> "
-                + IconRun(new[] { "Extra Stamina", "Extra Stamina", "Extra Stamina" });
-
-            // The drowsiness Energy Drink hands back when its boost ends belongs on this
-            // line rather than on one of its own. It is a single statement - faster now,
-            // sleepy afterwards - and the arrow is the word "afterwards". An effect that
-            // lands when a timer runs out is never a line of its own.
-            if (effect.drowsyOnEnd > 0f)
-            {
-                text += EffectColors.Neutral + Arrow + "</color>" + Token(effect.drowsyOnEnd, "Drowsy");
-            }
-
-            lines.Add(new EffectLine(text, Onset.OverTime, "Extra Stamina", 1f));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ClearAllStatus)
-        {
-            Affliction_ClearAllStatus effect = (Affliction_ClearAllStatus)affliction;
-            lines.AddRange(ClearedStatuses(effect.excludeCurse, null));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AddBonusStamina)
-        {
-            // Was "GAIN 100 EXTRA STAMINA" - the last piece of prose left on a common path.
-            Affliction_AddBonusStamina effect = (Affliction_AddBonusStamina)affliction;
-            lines.Add(new EffectLine(Token(effect.staminaAmount, "Extra Stamina"),
-                Onset.Instant, "Extra Stamina", effect.staminaAmount));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.InfiniteStamina)
-        {
-            // A duration, the infinity mark, and the stamina icon - flush, because the mark
-            // qualifies the icon rather than standing on its own. Where climbDelay grants a
-            // longer running window than a climbing one, the shorter figure is shown: it is
-            // the one you can rely on whatever you are doing.
-            Affliction_InfiniteStamina effect = (Affliction_InfiniteStamina)affliction;
-            lines.Add(new EffectLine(InfiniteStamina(effect.totalTime),
-                Onset.OverTime, "Extra Stamina", 1f));
-
-            if (effect.drowsyAffliction != null)
-            {
-                lines.AddRange(Affliction(effect.drowsyAffliction));
-            }
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.AdjustStatus)
-        {
-            Affliction_AdjustStatus effect = (Affliction_AdjustStatus)affliction;
-            lines.Add(new EffectLine(Token(effect.statusAmount, effect.statusType.ToString()),
-                Onset.Instant, effect.statusType.ToString(), effect.statusAmount));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.DrowsyOverTime)
-        {
-            // Affliction_AdjustDrowsyOverTime.UpdateEffect applies statusPerSecond * deltaTime
-            // every frame, so the total is exactly statusPerSecond * totalTime (verified
-            // against 2.1.a). The original rounded to multiples of 2.5 for no reason, which
-            // could be off by up to 1.25.
-            Affliction_AdjustDrowsyOverTime effect = (Affliction_AdjustDrowsyOverTime)affliction;
-            string drowsy = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Drowsy");
-            if (drowsy.Length > 0)
-            {
-                lines.Add(new EffectLine(drowsy, Onset.OverTime, "Drowsy", effect.statusPerSecond));
-            }
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.ColdOverTime)
-        {
-            // Heat Pack, and the last prose in the mod - it used to read
-            // "GAIN/REMOVE {n} COLD OVER {n}s". The sign says which way the status moves,
-            // the icon says what moves, and the duration says how long it keeps moving.
-            //
-            // UpdateEffect applies statusPerSecond * deltaTime every frame, so the total is
-            // the rate times the time - which here is 2160 on a scale that stops at 100.
-            // OverTime sees that and states the rate instead; the branch does not choose.
-            Affliction_AdjustColdOverTime effect = (Affliction_AdjustColdOverTime)affliction;
-            string cold = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Cold");
-            if (cold.Length > 0)
-            {
-                lines.Add(new EffectLine(cold, Onset.OverTime, "Cold", effect.statusPerSecond));
-            }
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Chaos)
-        {
-            // Cleared, then an unknown amount handed straight back. Showing the pair on one
-            // line per status is what makes the randomisation legible - two separate blocks
-            // read as two unrelated effects rather than one shuffle.
-            //
-            // OnApplied calls ClearAllStatus(excludeCurse: false) and then redistributes over
-            // its own list of eight: Cold, Hot, Poison, Drowsy, Injury, Hunger, Spores and
-            // Curse. So Curse is both cleared and refillable, and Thorns is in neither half.
-            // Thorns was in this loop until the clearable set was split out, carrying a
-            // hand-written exception that said the randomiser could not hand thorns back;
-            // the exception is gone because the status never belonged here at all.
-            foreach (string status in Clearable)
-            {
-                lines.Add(new EffectLine(Reshuffled(status), Onset.Instant, status, -1f));
-            }
-
-            string curse = CharacterAfflictions.STATUSTYPE.Curse.ToString();
-            lines.Add(new EffectLine(Reshuffled(curse), Onset.Instant, curse, -1f));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Invincibility)
-        {
-            // Fortified Milk and the healing amulet both grant this. It was going unreported
-            // entirely - there was no branch for it, so the shield line simply never appeared.
-            lines.Add(new EffectLine(
-                EffectColors.Neutral + Seconds(affliction.totalTime) + "</color> "
-                + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
-                Onset.OverTime, "Shield", 1f));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.RadiateInfiniteStam)
-        {
-            // Scout's Ambition. Infinite stamina for everyone standing close enough, so the
-            // radius is as much the point as the duration.
-            Affliction_RadiateInfiniteStam effect = (Affliction_RadiateInfiniteStam)affliction;
-            lines.Add(new EffectLine(
-                InfiniteStamina(effect.totalTime)
-                + EffectColors.Neutral + " " + PeakMetres(effect.radius) + "</color>",
-                Onset.OverTime, "Extra Stamina", 1f));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.MassSuperJump)
-        {
-            // Scout's Initiative. It does not grant speed - it launches everyone nearby and
-            // drops their gravity, so the balloon is the right symbol for what you feel.
-            Affliction_MassSuperJump effect = (Affliction_MassSuperJump)affliction;
-            lines.Add(new EffectLine(
-                EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
-                + EffectColors.Get("Float") + StatusIcons.Tag("Float") + "</color>"
-                + EffectColors.Neutral + " " + PeakMetres(effect.radius) + "</color>",
-                Onset.OverTime, "Float", 1f));
-        }
-        else if (affliction.GetAfflictionType() is PeakAffliction.AfflictionType.Sunscreen)
-        {
-            // Just how long it lasts. Naming the biome it protects you in was the only
-            // English this line ever had, and the item's own icon on the line above already
-            // says what it is.
-            //
-            // No icon of its own, and two candidates were tried and dropped. Heat behind a
-            // shield overpromises: AddSunHeat is skipped for anyone wearing sunscreen, so
-            // this is immunity to the *sun*, and a campfire will still cook you. The parasol
-            // - the other half of that same check - is accurate but reads as a different
-            // item rather than as this one's duration.
-            Affliction_Sunscreen effect = (Affliction_Sunscreen)affliction;
-            lines.Add(new EffectLine(EffectColors.Neutral + Seconds(effect.totalTime) + "</color>",
-                Onset.OverTime));
+            describe(affliction, lines);
         }
 
         return lines;
+    }
+
+    /// <summary>
+    /// Which method describes which affliction type - the same shape as
+    /// <c>ItemDescriptionBuilder.Handlers</c>, for the same reason. This was a chain of
+    /// twelve <c>else if</c> tests, and a type with no branch fell off the end into an empty
+    /// list with nothing to say so. As a table, what is and is not described is one list to
+    /// read rather than a chain to count.
+    ///
+    /// Types with no entry, each checked against the 2.1.a item database:
+    /// <list type="bullet">
+    /// <item><c>HealAll</c>, <c>BingBongShield</c>, <c>PoisonOverTime</c> - described by the
+    /// component carrying them (<c>Action_HealingGem</c>, <c>BingBongShieldWhileHolding</c>,
+    /// <c>Action_InflictPoison</c> and the Scorpion).</item>
+    /// <item><c>LowGravity</c>, <c>Blind</c>, <c>Numb</c> - reach a player only from the
+    /// Shroomberry roll, which <c>????</c> withholds on purpose. Mandrake's numbness comes
+    /// through <c>Action_Numb</c>.</item>
+    /// <item><c>Glowing</c> - Mushroom Glow, which is not in the live game.</item>
+    /// <item><c>ClimbingChalk</c>, <c>Exhausted</c>, <c>AdjustStatusOverTime</c> - read by
+    /// nothing in the game.</item>
+    /// <item><c>ZombieBite</c>, <c>PreventPoisonHealing</c>, <c>NoHunger</c> - mobs and
+    /// campfires, never an item.</item>
+    /// </list>
+    /// </summary>
+    private static readonly Dictionary<PeakAffliction.AfflictionType, Action<PeakAffliction, List<EffectLine>>>
+        AfflictionHandlers = new()
+    {
+        { PeakAffliction.AfflictionType.FasterBoi, DescribeFasterBoi },
+        { PeakAffliction.AfflictionType.ClearAllStatus, DescribeClearAll },
+        { PeakAffliction.AfflictionType.AddBonusStamina, DescribeAddBonusStamina },
+        { PeakAffliction.AfflictionType.InfiniteStamina, DescribeInfiniteStamina },
+        { PeakAffliction.AfflictionType.AdjustStatus, DescribeAdjustStatus },
+        { PeakAffliction.AfflictionType.DrowsyOverTime, DescribeDrowsyOverTime },
+        { PeakAffliction.AfflictionType.ColdOverTime, DescribeColdOverTime },
+        { PeakAffliction.AfflictionType.Chaos, DescribeChaos },
+        { PeakAffliction.AfflictionType.Invincibility, DescribeInvincibility },
+        { PeakAffliction.AfflictionType.RadiateInfiniteStam, DescribeRadiateInfiniteStam },
+        { PeakAffliction.AfflictionType.MassSuperJump, DescribeMassSuperJump },
+        { PeakAffliction.AfflictionType.Sunscreen, DescribeSunscreen },
+    };
+
+    private static void DescribeFasterBoi(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Three stamina icons for "you move faster", deliberately not the infinity mark:
+        // the stamina is not infinite here, only the movement is quicker, and reusing
+        // the infinity mark would say the wrong thing. The run and climb windows differ
+        // by climbDelay; the shorter one is the honest figure to show.
+        Affliction_FasterBoi effect = (Affliction_FasterBoi)affliction;
+        string text = EffectColors.Neutral + Seconds(effect.totalTime) + "</color> "
+            + IconRun(new[] { "Extra Stamina", "Extra Stamina", "Extra Stamina" });
+
+        // The drowsiness Energy Drink hands back when its boost ends belongs on this
+        // line rather than on one of its own. It is a single statement - faster now,
+        // sleepy afterwards - and the arrow is the word "afterwards". An effect that
+        // lands when a timer runs out is never a line of its own.
+        if (effect.drowsyOnEnd > 0f)
+        {
+            text += EffectColors.Neutral + Arrow + "</color>" + Token(effect.drowsyOnEnd, "Drowsy");
+        }
+
+        lines.Add(new EffectLine(text, Onset.OverTime, "Extra Stamina", 1f));
+    }
+
+    private static void DescribeClearAll(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        Affliction_ClearAllStatus effect = (Affliction_ClearAllStatus)affliction;
+        lines.AddRange(ClearedStatuses(effect.excludeCurse, null));
+    }
+
+    private static void DescribeAddBonusStamina(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Was "GAIN 100 EXTRA STAMINA" - the last piece of prose left on a common path.
+        Affliction_AddBonusStamina effect = (Affliction_AddBonusStamina)affliction;
+        lines.Add(new EffectLine(Token(effect.staminaAmount, "Extra Stamina"),
+            Onset.Instant, "Extra Stamina", effect.staminaAmount));
+    }
+
+    private static void DescribeInfiniteStamina(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // A duration, the infinity mark, and the stamina icon - flush, because the mark
+        // qualifies the icon rather than standing on its own. Where climbDelay grants a
+        // longer running window than a climbing one, the shorter figure is shown: it is
+        // the one you can rely on whatever you are doing.
+        Affliction_InfiniteStamina effect = (Affliction_InfiniteStamina)affliction;
+        lines.Add(new EffectLine(InfiniteStamina(effect.totalTime),
+            Onset.OverTime, "Extra Stamina", 1f));
+
+        if (effect.drowsyAffliction != null)
+        {
+            lines.AddRange(Affliction(effect.drowsyAffliction));
+        }
+    }
+
+    private static void DescribeAdjustStatus(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        Affliction_AdjustStatus effect = (Affliction_AdjustStatus)affliction;
+        lines.Add(new EffectLine(Token(effect.statusAmount, effect.statusType.ToString()),
+            Onset.Instant, effect.statusType.ToString(), effect.statusAmount));
+    }
+
+    private static void DescribeDrowsyOverTime(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Affliction_AdjustDrowsyOverTime.UpdateEffect applies statusPerSecond * deltaTime
+        // every frame, so the total is exactly statusPerSecond * totalTime (verified
+        // against 2.1.a). The original rounded to multiples of 2.5 for no reason, which
+        // could be off by up to 1.25.
+        Affliction_AdjustDrowsyOverTime effect = (Affliction_AdjustDrowsyOverTime)affliction;
+        string drowsy = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Drowsy");
+        if (drowsy.Length > 0)
+        {
+            lines.Add(new EffectLine(drowsy, Onset.OverTime, "Drowsy", effect.statusPerSecond));
+        }
+    }
+
+    private static void DescribeColdOverTime(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Heat Pack, and the last prose in the mod - it used to read
+        // "GAIN/REMOVE {n} COLD OVER {n}s". The sign says which way the status moves,
+        // the icon says what moves, and the duration says how long it keeps moving.
+        //
+        // UpdateEffect applies statusPerSecond * deltaTime every frame, so the total is
+        // the rate times the time - which here is 2160 on a scale that stops at 100.
+        // OverTime sees that and states the rate instead; the branch does not choose.
+        Affliction_AdjustColdOverTime effect = (Affliction_AdjustColdOverTime)affliction;
+        string cold = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Cold");
+        if (cold.Length > 0)
+        {
+            lines.Add(new EffectLine(cold, Onset.OverTime, "Cold", effect.statusPerSecond));
+        }
+    }
+
+    private static void DescribeChaos(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Cleared, then an unknown amount handed straight back. Showing the pair on one
+        // line per status is what makes the randomisation legible - two separate blocks
+        // read as two unrelated effects rather than one shuffle.
+        //
+        // OnApplied calls ClearAllStatus(excludeCurse: false) and then redistributes over
+        // its own list of eight: Cold, Hot, Poison, Drowsy, Injury, Hunger, Spores and
+        // Curse. So Curse is both cleared and refillable, and Thorns is in neither half.
+        // Thorns was in this loop until the clearable set was split out, carrying a
+        // hand-written exception that said the randomiser could not hand thorns back;
+        // the exception is gone because the status never belonged here at all.
+        foreach (string status in Clearable)
+        {
+            lines.Add(new EffectLine(Reshuffled(status), Onset.Instant, status, -1f));
+        }
+
+        string curse = CharacterAfflictions.STATUSTYPE.Curse.ToString();
+        lines.Add(new EffectLine(Reshuffled(curse), Onset.Instant, curse, -1f));
+    }
+
+    private static void DescribeInvincibility(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Fortified Milk and the healing amulet both grant this. It was going unreported
+        // entirely - there was no branch for it, so the shield line simply never appeared.
+        lines.Add(new EffectLine(
+            EffectColors.Neutral + Seconds(affliction.totalTime) + "</color> "
+            + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
+            Onset.OverTime, "Shield", 1f));
+    }
+
+    private static void DescribeRadiateInfiniteStam(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Scout's Ambition. Infinite stamina for everyone standing close enough, so the
+        // radius is as much the point as the duration.
+        Affliction_RadiateInfiniteStam effect = (Affliction_RadiateInfiniteStam)affliction;
+        lines.Add(new EffectLine(
+            InfiniteStamina(effect.totalTime)
+            + EffectColors.Neutral + " " + PeakMetres(effect.radius) + "</color>",
+            Onset.OverTime, "Extra Stamina", 1f));
+    }
+
+    private static void DescribeMassSuperJump(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Scout's Initiative. It does not grant speed - it launches everyone nearby and
+        // drops their gravity, so the balloon is the right symbol for what you feel.
+        //
+        // lowGravAmount feeds the same float-and-jump formula as the number of balloons you
+        // are holding, so it is a balloon count. Three or more is drawn as the bunch - the
+        // game's own second picture of the same lift, and what the Initiative hands out.
+        Affliction_MassSuperJump effect = (Affliction_MassSuperJump)affliction;
+        string icon = effect.lowGravAmount >= 3 && StatusIcons.HasIcon("FloatBunch") ? "FloatBunch" : "Float";
+        lines.Add(new EffectLine(
+            EffectColors.Neutral + Seconds(effect.lowGravTime) + "</color> "
+            + EffectColors.Get("Float") + StatusIcons.Tag(icon) + "</color>"
+            + EffectColors.Neutral + " " + PeakMetres(effect.radius) + "</color>",
+            Onset.OverTime, "Float", 1f));
+    }
+
+    private static void DescribeSunscreen(PeakAffliction affliction, List<EffectLine> lines)
+    {
+        // Just how long it lasts. Naming the biome it protects you in was the only
+        // English this line ever had, and the item's own icon on the line above already
+        // says what it is.
+        //
+        // No icon of its own, and two candidates were tried and dropped. Heat behind a
+        // shield overpromises: AddSunHeat is skipped for anyone wearing sunscreen, so
+        // this is immunity to the *sun*, and a campfire will still cook you. The parasol
+        // - the other half of that same check - is accurate but reads as a different
+        // item rather than as this one's duration.
+        Affliction_Sunscreen effect = (Affliction_Sunscreen)affliction;
+        lines.Add(new EffectLine(EffectColors.Neutral + Seconds(effect.totalTime) + "</color>",
+            Onset.OverTime));
     }
 
     /// <summary>
