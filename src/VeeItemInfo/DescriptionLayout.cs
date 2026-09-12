@@ -94,6 +94,7 @@ internal sealed class DescriptionLayout
         StringBuilder result = new();
         Block previous = Block.Custom;
         bool first = true;
+        string gap = PluginConfig.SectionSpacing.Value ? "\n\n" : "\n";
 
         foreach (Block block in Order)
         {
@@ -105,7 +106,7 @@ internal sealed class DescriptionLayout
             if (!first)
             {
                 // Weight belongs with the cooking hint, not apart from it.
-                result.Append(block == Block.Weight && previous == Block.Cooking ? "\n" : "\n\n");
+                result.Append(block == Block.Weight && previous == Block.Cooking ? "\n" : gap);
             }
 
             result.Append(string.Join("\n", lines));
