@@ -1277,10 +1277,6 @@ internal static class ItemDescriptionBuilder
     private static string ReachInUnits(float unityUnits) =>
         EffectColors.Neutral + EffectFormatter.PeakMetres(unityUnits) + "</color>";
 
-    /// <summary>A distance already in the metres the game shows, in the neutral colour.</summary>
-    private static string Reach(float metres) =>
-        EffectColors.Neutral + EffectFormatter.Metres(metres) + "</color>";
-
     /// <summary>
     /// A lit lantern warms whoever is near it. Stated per second rather than as a total over
     /// the fuel, so the figure means the same thing on a full lantern and a nearly-spent one.
