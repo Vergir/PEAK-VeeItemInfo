@@ -67,6 +67,31 @@ internal static class ItemDump
         StringBuilder text = new();
         List<PreviewPage.Row> rows = new();
         int failed = 0;
+
+        // Nobody is holding a prefab, and the showcase should read as the ordinary case - a
+        // human - rather than as whoever happened to be a skeleton when the dump ran.
+        ItemDescriptionBuilder.AssumeHuman = true;
+        try
+        {
+            Dump(items, text, rows, ref failed);
+        }
+        finally
+        {
+            ItemDescriptionBuilder.AssumeHuman = false;
+        }
+
+        File.WriteAllText(path, text.ToString());
+
+        // The same rows as a page, beside the text: the showcase is this dump rendered.
+        string pagePath = Path.Combine(Paths.BepInExRootPath, "VeeItemInfo-showcase.html");
+        File.WriteAllText(pagePath, PreviewPage.Render(rows));
+
+        Plugin.Log.LogInfo($"[dump] {items.Count} items, {failed} failed -> {path} and {pagePath}");
+    }
+
+    private static void Dump(SortedDictionary<string, Item> items, StringBuilder text,
+        List<PreviewPage.Row> rows, ref int failed)
+    {
         foreach (KeyValuePair<string, Item> entry in items)
         {
             text.Append("==== ").Append(entry.Key).Append(" ====\n");
@@ -91,14 +116,6 @@ internal static class ItemDump
 
             text.Append('\n');
         }
-
-        File.WriteAllText(path, text.ToString());
-
-        // The same rows as a page, beside the text: the showcase is this dump rendered.
-        string pagePath = Path.Combine(Paths.BepInExRootPath, "VeeItemInfo-showcase.html");
-        File.WriteAllText(pagePath, PreviewPage.Render(rows));
-
-        Plugin.Log.LogInfo($"[dump] {items.Count} items, {failed} failed -> {path} and {pagePath}");
     }
 
     /// <summary>

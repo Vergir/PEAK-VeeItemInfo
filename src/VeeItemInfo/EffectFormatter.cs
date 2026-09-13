@@ -87,29 +87,6 @@ internal static class EffectFormatter
         Colored((amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect);
 
     /// <summary>
-    /// An amount that either lands or does not - "0/+50 &lt;curse&gt;".
-    ///
-    /// <c>Action_ModifyStatus.ifSkeleton</c> makes the whole change conditional: RunAction
-    /// returns before doing anything unless the character is a skeleton. The Book of Bones
-    /// carries <c>Curse +0.5</c> with the flag and <c>Curse -0.25</c> without, and toggles you
-    /// with <c>Action_BecomeSkeleton</c> first - so using it as a human nets +25 and using it
-    /// as a skeleton nets -25. Printing the +50 unconditionally was wrong half the time.
-    ///
-    /// The slash is the discrete pair, the same form the item-duplication amulet uses for
-    /// "plain or mystical". The zero carries no sign, because nothing happening has no
-    /// direction and because a conditional removal would otherwise read "-0/-25".
-    /// </summary>
-    internal static string Conditional(float amount, string effect)
-    {
-        if (amount == 0f)
-        {
-            return "";
-        }
-
-        return Colored("0/" + (amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect) + "\n";
-    }
-
-    /// <summary>
     /// A change over time that may not land at all - "+ 0/20 &lt;poison&gt; / 8s". The sign
     /// leads on its own, then the two outcomes as a slash-pair, then the duration as
     /// <see cref="OverTime"/> writes it. Used for a mushroom that may or may not be the

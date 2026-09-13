@@ -688,22 +688,53 @@ internal static class ItemDescriptionBuilder
         if (effect.statusType == CharacterAfflictions.STATUSTYPE.Poison && effect.changeAmount < 0f)
         {
             string spores = CharacterAfflictions.STATUSTYPE.Spores.ToString();
-            Collect(parts.Effects, parts.Source, Change(effect, spores),
+            Collect(parts.Effects, parts.Source, Change(effect, spores, parts),
                 Onset.Instant, spores, effect.changeAmount);
         }
     }
 
     /// <summary>
-    /// One status change, conditional or not.
+    /// One status change, or nothing where its gate is shut.
     ///
     /// <c>ifSkeleton</c> makes RunAction return before doing anything unless the character is
-    /// a skeleton, so the change is a coin the item flips rather than something it does. The
-    /// coupling above rides along: a conditional poison cure is a conditional spores cure.
+    /// a skeleton. Rather than hedge the line as "0/+50", the overlay asks the observed
+    /// character the same question the action will, and shows the change only when it would
+    /// land. The coupling above rides along: a gated poison cure is a gated spores cure.
+    ///
+    /// The Book of Bones is the one twist: its <c>Action_BecomeSkeleton</c> runs first, so
+    /// there the gate opens for a <i>human</i> - you are a skeleton by the time the curse is
+    /// checked - and shuts for a skeleton, who has just been turned back. So the gate applies
+    /// when the character's state and the item's toggle disagree. Fortified Milk's skeleton-
+    /// only injury cure has no toggle and simply waits for a skeleton to hold it.
     /// </summary>
-    private static string Change(Action_ModifyStatus effect, string status) =>
-        effect.ifSkeleton
-            ? EffectFormatter.Conditional(effect.changeAmount, status)
+    private static string Change(Action_ModifyStatus effect, string status, Parts parts) =>
+        effect.ifSkeleton && !SkeletonGateOpen(parts.Item)
+            ? ""
             : EffectFormatter.Effect(effect.changeAmount, status);
+
+    private static bool SkeletonGateOpen(GameObject item)
+    {
+        bool toggles = item.GetComponent<Action_BecomeSkeleton>() != null;
+        return IsSkeleton() != toggles;
+    }
+
+    /// <summary>
+    /// Whether the character being described is a skeleton right now. The database dump has
+    /// no one holding the item and assumes a human, so the showcase is the ordinary case.
+    /// </summary>
+    private static bool IsSkeleton()
+    {
+        if (AssumeHuman)
+        {
+            return false;
+        }
+
+        Character observed = Character.observedCharacter;
+        return observed != null && observed.data != null && observed.data.isSkeleton;
+    }
+
+    /// <summary>Set by the dump while it runs, so prefabs are described for a human holder.</summary>
+    internal static bool AssumeHuman { get; set; }
 
     private static void DescribeApplyAffliction(Component component, Parts parts)
     {
