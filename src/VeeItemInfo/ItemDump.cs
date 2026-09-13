@@ -65,6 +65,7 @@ internal static class ItemDump
         }
 
         StringBuilder text = new();
+        List<PreviewPage.Row> rows = new();
         int failed = 0;
         foreach (KeyValuePair<string, Item> entry in items)
         {
@@ -78,19 +79,26 @@ internal static class ItemDump
                 string built = ItemDescriptionBuilder.Build(entry.Value);
                 text.Append("[plain]\n").Append(Plain(built)).Append('\n');
                 text.Append("[raw]\n").Append(built).Append('\n');
+                rows.Add(new PreviewPage.Row(entry.Value, built, null));
             }
             catch (Exception e)
             {
                 failed++;
                 text.Append("[failed] ").Append(e.GetType().Name).Append(": ").Append(e.Message)
                     .Append('\n').Append(e.StackTrace).Append('\n');
+                rows.Add(new PreviewPage.Row(entry.Value, null, e.GetType().Name + ": " + e.Message));
             }
 
             text.Append('\n');
         }
 
         File.WriteAllText(path, text.ToString());
-        Plugin.Log.LogInfo($"[dump] {items.Count} items, {failed} failed -> {path}");
+
+        // The same rows as a page, beside the text: the public preview is this dump rendered.
+        string pagePath = Path.ChangeExtension(path, ".html");
+        File.WriteAllText(pagePath, PreviewPage.Render(rows));
+
+        Plugin.Log.LogInfo($"[dump] {items.Count} items, {failed} failed -> {path} and {pagePath}");
     }
 
     /// <summary>

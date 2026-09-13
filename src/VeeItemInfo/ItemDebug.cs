@@ -37,7 +37,8 @@ internal static class ItemDebug
     {
         GameObject itemGameObj = item.gameObject;
         StringBuilder report = new();
-        report.Append($"[item] {itemGameObj.name} carryWeight={item.carryWeight} tags={item.itemTags}");
+        report.Append($"[item] {itemGameObj.name} name=\"{item.UIData?.itemName}\""
+            + $" carryWeight={item.carryWeight} tags={item.itemTags}");
 
         Texture2D? icon = item.UIData?.GetIcon();
         report.Append($" icon={(icon == null ? "<none>" : icon.name)}");
