@@ -360,7 +360,35 @@ internal static class ItemDebug
         }
 
         Describe(tree, prefab.transform, MaxPrefabDepth);
+        DeepEffects(tree, prefab);
         return tree.ToString();
+    }
+
+    /// <summary>
+    /// Every effect-carrying component in the prefab at any depth, with its path and whether
+    /// its object is switched on. The tree above stops at four levels; the handlers do not,
+    /// and the stovetop's second and third emitters sat below where the tree could show them.
+    /// </summary>
+    private static void DeepEffects(StringBuilder tree, GameObject prefab)
+    {
+        foreach (Component component in prefab.GetComponentsInChildren<Component>(true))
+        {
+            if (component is not (AOE or Peak.StatusFieldBase or StatusEmitter))
+            {
+                continue;
+            }
+
+            string path = component.transform.name;
+            bool active = component.gameObject.activeSelf;
+            for (Transform t = component.transform.parent; t != null && t != prefab.transform; t = t.parent)
+            {
+                path = t.name + "/" + path;
+                active &= t.gameObject.activeSelf;
+            }
+
+            tree.Append("\n[item]     effect ").Append(path).Append(active ? "" : " [INACTIVE]")
+                .Append(" | ").Append(component.GetType().Name).Append(PrefabValues(component));
+        }
     }
 
     /// <summary>
@@ -651,6 +679,8 @@ internal static class ItemDebug
             + $" addtl=[{DescribeAdditional(f)}]"
             + (f is StatusField s ? $" radius={s.radius} tickBased={s.tickBased}"
                 + $" timeBetweenTicks={s.timeBetweenTicks}" : ""),
+        StatusEmitter e => $" {e.statusType}={e.amount}/s radius={e.radius} outerFade={e.outerFade}"
+            + $" innerFade={e.innerFade} minAmount={e.minAmount} tick={e.tickTime}",
         TimeEvent t => $" rate={t.rate} repeating={t.repeating}",
         RemoveAfterSeconds r => $" seconds={r.seconds}",
         Campfire c => $" burnsFor={c.burnsFor} moraleRadius={c.moraleBoostRadius}",

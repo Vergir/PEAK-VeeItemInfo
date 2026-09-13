@@ -873,6 +873,10 @@ internal static class ItemDescriptionBuilder
                 EffectColors.Neutral + EffectFormatter.Seconds(campfire.burnsFor) + "</color> "
                 + EffectColors.Get("Cook") + StatusIcons.Tag("Cook") + "</color>");
         }
+
+        // What standing by the built thing does - a stovetop is a campfire, and a campfire
+        // warms you, which the cook icon alone does not say.
+        Collect(parts.Effects, parts.Source, DescribeEmitters(effect.constructedPrefab));
     }
     private static void DescribeRopeShooter(Component component, Parts parts)
     {
@@ -1371,6 +1375,103 @@ internal static class ItemDescriptionBuilder
     }
 
     /// <summary>
+    /// What a built thing does to whoever stands near it, per second - a stovetop's warmth.
+    ///
+    /// <c>StatusEmitter.Update</c> hands <c>amount x tickTime</c> to Add/SubtractStatus every
+    /// <c>tickTime</c>, so <c>amount</c> is a per-second rate - but a banked one, paid out in
+    /// whole steps per tick, and <see cref="TickedRate"/> turns that back into the rate a
+    /// player would measure. The inner fade scales an <i>added</i> status down towards
+    /// <c>minAmount</c> by distance; a removed one is never faded, and the campfire removes.
+    /// Same shape as a lantern's field, and the same poison-to-spores coupling.
+    /// </summary>
+    private static List<EffectLine> DescribeEmitters(GameObject? prefab)
+    {
+        List<EffectLine> lines = new();
+        if (prefab == null)
+        {
+            return lines;
+        }
+
+        Dictionary<CharacterAfflictions.STATUSTYPE, float> rates = new();
+        foreach (StatusEmitter emitter in prefab.GetComponentsInChildren<StatusEmitter>(true))
+        {
+            // The walk includes inactive objects because a prefab's ancestors are switched on
+            // by the thing that builds it - the stovetop's EnableWhenLit by Campfire. An
+            // emitter whose *own* object is off is a different matter: the stovetop's
+            // HealRadius ships disabled and nothing turns it on, and the stove does not heal.
+            if (!emitter.gameObject.activeSelf)
+            {
+                continue;
+            }
+
+            // A radius your chest cannot get inside on foot is an emitter nobody meets: the
+            // stovetop's HotRadius is half a unit around the flame itself.
+            if (!Blast.Reachable(emitter.radius + emitter.outerFade))
+            {
+                continue;
+            }
+
+            Accumulate(rates, emitter.statusType,
+                TickedRate(emitter.amount * emitter.tickTime, emitter.tickTime));
+        }
+
+        if (rates.TryGetValue(CharacterAfflictions.STATUSTYPE.Poison, out float poison)
+            && CuresSporesToo(CharacterAfflictions.STATUSTYPE.Poison, poison))
+        {
+            Accumulate(rates, CharacterAfflictions.STATUSTYPE.Spores, poison);
+        }
+
+        foreach (KeyValuePair<CharacterAfflictions.STATUSTYPE, float> rate in rates)
+        {
+            AddPerSecond(lines, rate.Value, rate.Key);
+        }
+
+        return lines;
+    }
+
+    /// <summary>
+    /// The rate a repeating amount actually moves a status at, once the game's banking has
+    /// had its say: whole steps per tick where the amount covers one, else one step every few
+    /// ticks. See <see cref="TickedTotal"/> for why dividing the raw amount overstates it.
+    /// </summary>
+    private static float TickedRate(float perTickAmount, float period)
+    {
+        float payout = Payout(perTickAmount, period, out float every);
+        if (payout == 0f)
+        {
+            return 0f;
+        }
+
+        float rate = payout / every;
+        return perTickAmount < 0f ? -rate : rate;
+    }
+
+    /// <summary>
+    /// What one payout of a banked repeating amount is worth and how often it lands: the
+    /// floored amount every period where the amount covers a step, else a single step every
+    /// however many periods it takes to reach one. Zero payout where nothing ever lands.
+    /// </summary>
+    private static float Payout(float perTickAmount, float period, out float every)
+    {
+        every = period;
+        float perTick = Mathf.Abs(perTickAmount);
+        if (perTick == 0f || period <= 0f)
+        {
+            return 0f;
+        }
+
+        if (perTick >= GameValues.StatusStep)
+        {
+            // Big enough to pay out every tick, still losing whatever does not fill a step.
+            return Mathf.Floor(perTick / GameValues.StatusStep) * GameValues.StatusStep;
+        }
+
+        // Too small to pay out alone, so it takes several ticks to reach one step.
+        every = Mathf.Ceil(GameValues.StatusStep / perTick) * period;
+        return GameValues.StatusStep;
+    }
+
+    /// <summary>
     /// How long a spawned effect lasts, from the nearest RemoveAfterSeconds at or above it.
     /// Zero where nothing sets a lifetime, which reads as "no duration to state".
     ///
@@ -1449,25 +1550,10 @@ internal static class ItemDescriptionBuilder
     /// </summary>
     private static float TickedTotal(float amount, float period, float seconds)
     {
-        float perTick = Mathf.Abs(amount);
-        if (perTick == 0f || period <= 0f || seconds <= 0f)
+        float payout = Payout(amount, period, out float every);
+        if (payout == 0f || seconds <= 0f)
         {
             return 0f;
-        }
-
-        float payout;
-        float every;
-        if (perTick >= GameValues.StatusStep)
-        {
-            // Big enough to pay out every tick, still losing whatever does not fill a step.
-            payout = Mathf.Floor(perTick / GameValues.StatusStep) * GameValues.StatusStep;
-            every = period;
-        }
-        else
-        {
-            // Too small to pay out alone, so it takes several ticks to reach one step.
-            payout = GameValues.StatusStep;
-            every = Mathf.Ceil(GameValues.StatusStep / perTick) * period;
         }
 
         float payouts = Mathf.Max(0f, Mathf.Ceil(seconds / every) - 1f);
