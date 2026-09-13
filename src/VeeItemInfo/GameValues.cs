@@ -47,6 +47,37 @@ internal static class GameValues
     internal static float StepsPerBar => 1f / StatusStep;
 
     /// <summary>
+    /// How many times an item can be cooked. <c>ItemCooking.COOKING_MAX</c> is a const, so
+    /// naming it directly inlines 12 into this assembly and a patch raising the ceiling would
+    /// leave the cooking hint going quiet at the old one.
+    /// </summary>
+    internal static int CookingMax { get; } = Constant(
+        typeof(ItemCooking),
+        nameof(ItemCooking.COOKING_MAX),
+        ItemCooking.COOKING_MAX);
+
+    /// <summary>Integer twin of the float reader below; a non-positive reading is rejected.</summary>
+    private static int Constant(Type owner, string name, int compiled)
+    {
+        try
+        {
+            FieldInfo? field = owner.GetField(name, BindingFlags.Public | BindingFlags.Static);
+            if (field != null && field.IsLiteral && field.GetRawConstantValue() is int read && read > 0)
+            {
+                return read;
+            }
+
+            Warn(owner, name, compiled, field == null ? "no such constant" : "unusable value");
+        }
+        catch (Exception e)
+        {
+            Warn(owner, name, compiled, e.Message);
+        }
+
+        return compiled;
+    }
+
+    /// <summary>
     /// Reads a <c>const</c> field out of the loaded game assembly, falling back to the value
     /// this assembly was compiled against.
     /// </summary>

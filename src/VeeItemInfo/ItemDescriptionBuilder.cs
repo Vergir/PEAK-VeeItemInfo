@@ -65,7 +65,7 @@ internal static class ItemDescriptionBuilder
         // an item with no Action_Consume never runs them at all. Cooking an amulet adds an
         // Action_GiveExtraStamina through ItemCooking.ChangeStatsCooked regardless, so a
         // cooked Scout's Ambition was advertising +10 stamina it can never hand out.
-        bool consumable = itemGameObj.GetComponent<Action_Consume>() != null;
+        bool consumable = CookingHint.IsConsumable(itemGameObj);
 
         List<EffectLine> effects = new();
 
@@ -104,6 +104,15 @@ internal static class ItemDescriptionBuilder
                 continue;
             }
 
+            // An action flagged OnConsumed fires only when the item is eaten, so on an item
+            // nobody can eat it never fires. Cooking adds such actions to anything - a cooked
+            // amulet was advertising stamina it can never hand out. One test here, rather
+            // than in whichever three handlers happened to need it.
+            if (!consumable && itemComponents[i] is ItemAction action && action.OnConsumed)
+            {
+                continue;
+            }
+
             Action<Component, Parts>? describe = HandlerFor(itemComponents[i].GetType());
             if (describe != null)
             {
@@ -113,6 +122,21 @@ internal static class ItemDescriptionBuilder
         }
 
         EmitEffects(layout, effects);
+
+        // The cooking hint is decided here rather than from the component loop, and from
+        // the one ItemCooking the game itself uses: Item.Awake does GetOrAddComponent, which
+        // is GetComponent - the first - so every live item has one and a prefab without one
+        // (most foods) behaves as the default. The Infinite Rescue Claw carries two, a
+        // cannot-be-cooked one first and a wreck-on-cook one second; the game reads the first
+        // and the item cannot be cooked, and describing the second promised a wreck that
+        // never happens. A disabled one is a cooked-off script and says nothing, like any
+        // other disabled component.
+        ItemCooking? cooking = itemGameObj.GetComponent<ItemCooking>();
+        if (cooking == null || cooking.enabled)
+        {
+            layout.Add(Block.Cooking, CookingHint.Describe(itemGameObj, cooking));
+        }
+
         return layout.Render();
     }
 
@@ -202,7 +226,8 @@ internal static class ItemDescriptionBuilder
         { typeof(Peak.Action_HealingGem), DescribeHealingGem },
         { typeof(Peak.Action_CloneSelectedItem), DescribeCloneSelectedItem },
         { typeof(Peak.Action_SuperJumpAmulet), DescribeSuperJumpAmulet },
-        { typeof(ItemCooking), DescribeItemCooking },
+        // ItemCooking is deliberately absent: the cooking hint is decided in Build after
+        // every handler has run, because it depends on what they described.
     };
 
     /// <summary>
@@ -441,20 +466,14 @@ internal static class ItemDescriptionBuilder
     private static void DescribeRestoreHunger(Component component, Parts parts)
     {
         Action_RestoreHunger effect = (Action_RestoreHunger)component;
-        if (parts.Consumable || !effect.OnConsumed)
-        {
-            Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.restorationAmount * -1f, "Hunger"),
-                Onset.Instant, "Hunger", effect.restorationAmount * -1f);
-        }
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.restorationAmount * -1f, "Hunger"),
+            Onset.Instant, "Hunger", effect.restorationAmount * -1f);
     }
     private static void DescribeGiveExtraStamina(Component component, Parts parts)
     {
         Action_GiveExtraStamina effect = (Action_GiveExtraStamina)component;
-        if (parts.Consumable || !effect.OnConsumed)
-        {
-            Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.amount, "Extra Stamina"),
-                Onset.Instant, "Extra Stamina", effect.amount);
-        }
+        Collect(parts.Effects, parts.Source, EffectFormatter.Effect(effect.amount, "Extra Stamina"),
+            Onset.Instant, "Extra Stamina", effect.amount);
     }
     private static void DescribeInflictPoison(Component component, Parts parts)
     {
@@ -538,13 +557,8 @@ internal static class ItemDescriptionBuilder
     private static void DescribeModifyStatus(Component component, Parts parts)
     {
         Action_ModifyStatus effect = (Action_ModifyStatus)component;
-        if (!parts.Consumable && effect.OnConsumed)
-        {
-            return;
-        }
-
         string status = effect.statusType.ToString();
-        Collect(parts.Effects, parts.Source, Change(effect, status),
+        Collect(parts.Effects, parts.Source, Change(effect, status, parts),
             Onset.Instant, status, effect.changeAmount);
 
         // CharacterAfflictions.SubtractStatus takes the same amount off Spores
@@ -1043,15 +1057,6 @@ internal static class ItemDescriptionBuilder
                 Onset.Instant, "Petrify", superJump.petrifyPerUse);
         }
     }
-    // 'is' rather than an exact match: ItemCooking declares UpdateCookedBehavior and
-    // CookVisually virtual, so the game clearly anticipates subclasses even though
-    // 2.1.a ships none. An exact check would silently drop the hint the day one appears.
-    private static void DescribeItemCooking(Component component, Parts parts)
-    {
-        ItemCooking cooking = (ItemCooking)component;
-        parts.Layout.Add(Block.Cooking, CookingHint.Describe(cooking));
-    }
-
 
     /// <summary>
     /// How far apart two segments of the rope this cannon fires sit, in Unity units, or zero

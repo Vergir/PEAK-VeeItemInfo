@@ -213,7 +213,9 @@ internal static class ItemDebug
         Peak.RitualDaggerFeedBehavior a => $" bonusStamina={a.bonusStamina}"
             + $" infiniteStaminaTime={a.infiniteStaminaTime}",
         ItemCooking c => $" canBeCooked={c.canBeCooked} wreck={c.wreckWhenCooked} preCooked={c.preCooked}"
-            + $" behaviours={c.additionalCookingBehaviors.Length} explosionPrefab={(c.explosionPrefab == null ? "<none>" : c.explosionPrefab.name)}",
+            + $" ignoreDefault={c.ignoreDefaultCookBehavior} ignorePoison={c.ignoreDefaultPoisonBehavior}"
+            + Prefab(" explosionPrefab", c.explosionPrefab)
+            + Behaviours(c),
         Scorpion a => $" totalPoisonTime={a.totalPoisonTime}",
         Dynamite a => $" fuse={a.startingFuseTime} lightFuseRadius={a.lightFuseRadius}"
             + Prefab(" explodes", a.explosionPrefab),
@@ -228,6 +230,67 @@ internal static class ItemDebug
         Peak.AmuletBase a => $" amuletIndex={a.amuletIndex} startActive={a.startActive}",
         _ => "",
     };
+
+    /// <summary>
+    /// Every cooking behaviour on the item, with what it would do. The type list alone said
+    /// "behaviours=1" for Fortified Milk and Bing Bong alike, which is no help deciding what
+    /// the hint should say.
+    /// </summary>
+    private static string Behaviours(ItemCooking cooking)
+    {
+        if (cooking.additionalCookingBehaviors == null || cooking.additionalCookingBehaviors.Length == 0)
+        {
+            return "";
+        }
+
+        StringBuilder text = new();
+        foreach (AdditionalCookingBehavior behaviour in cooking.additionalCookingBehaviors)
+        {
+            if (behaviour == null)
+            {
+                text.Append("\n[item]     <null behaviour>");
+                continue;
+            }
+
+            text.Append("\n[item]     ").Append(behaviour.GetType().Name)
+                .Append($" at={behaviour.cookedAmountToTrigger} once={behaviour.onlyOnce}");
+            text.Append(behaviour switch
+            {
+                CookingBehavior_DisableScripts b => $" disables=[{Names(b.scriptsToDisable)}]",
+                CookingBehavior_EnableScripts b => $" enables=[{Names(b.scriptsToEnable)}]",
+                CookingBehavior_RunActions b => $" runs=[{Names(b.actionsToRun)}]",
+                CookingBehavior_ReplaceItem b => $" replaceWith={(b.replaceWithItem == null ? "<none>" : b.replaceWithItem.name)} cookNew={b.cookNewItem}",
+                CookingBehavior_ChangeAfflictionTime b => $" change={b.change} on={(b.action == null ? "<none>" : Affliction(b.action.affliction))}",
+                CookingBehavior_AddPoisonOnUse b => $" onUse={b.onUse} onConsume={b.onConsume}",
+                CookingBehavior_AdjustStatusInstantly b => $" {b.statusType}={b.amount}",
+                CookingBehavior_Explode b => $" dontRunIfOutOfFuel={b.dontRunIfOutOfFuel}",
+                CookingBehavior_MessUpAudio b => $" pitch-={b.pitchReductionPerCooking} volume-={b.volumeReductionPerCooking} max={b.max}",
+                CookingBehavior_ModifyBugleWobble b => $" wobble+={b.changePerCooking} max={b.maxCooking}",
+                CookingBehavior_ModifyAudioSourcePitch b => $" pitch+={b.changePerCooking}",
+                CookingBehavior_EnableDisableObjects b => $" enable={b.objectsToEnable?.Count ?? 0} disable={b.objectsToDisable?.Count ?? 0}",
+                CookingBehavior_ModifyEtcStats b => $" canPocket={b.canPocket} canBackpack={b.canBackpack}",
+                _ => "",
+            });
+        }
+
+        return text.ToString();
+    }
+
+    private static string Names(Component[]? components)
+    {
+        if (components == null)
+        {
+            return "";
+        }
+
+        List<string> names = new();
+        foreach (Component component in components)
+        {
+            names.Add(component == null ? "<null>" : component.GetType().Name);
+        }
+
+        return string.Join(", ", names);
+    }
 
     /// <summary>One affliction's type and the numbers on it, or "&lt;none&gt;".</summary>
     private static string Affliction(Peak.Afflictions.Affliction? affliction)
