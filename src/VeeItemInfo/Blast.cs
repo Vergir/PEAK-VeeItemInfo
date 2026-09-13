@@ -73,6 +73,14 @@ internal static class Blast
     private const float PointBlankDistance = 0.64f;
 
     /// <summary>
+    /// Whether a radius measured from the character's centre can be entered on foot at all.
+    /// A stovetop's HotRadius is half a unit - smaller than the gap between your chest and
+    /// anything on the ground - so nobody standing is ever inside it, and describing it
+    /// would promise heat the fire never gives.
+    /// </summary>
+    internal static bool Reachable(float radius) => radius > PointBlankDistance;
+
+    /// <summary>
     /// What <paramref name="amount"/> of an AOE's status is actually delivered to somebody
     /// standing on top of it.
     ///
@@ -100,8 +108,22 @@ internal static class Blast
         // negative directly would round it *away* from zero - turning a 17.5 heal into 20.
         float scaled = Mathf.Abs(amount) * factor;
         float delivered = Mathf.Floor(scaled * GameValues.StepsPerBar) * GameValues.StatusStep;
-        return amount < 0f ? -delivered : delivered;
+
+        // Once per firing, and floored per firing: the remainder is thrown away each time the
+        // game pays out, so two firings of 0.062 are two payouts of 0.05, not one of 0.124.
+        return (amount < 0f ? -delivered : delivered) * Firings(aoe);
     }
+
+    /// <summary>
+    /// How many times an AOE goes off when it is spawned. <c>Start</c> calls Explode when
+    /// <c>auto</c> is set and <c>OnEnable</c> calls it again when <c>onEnable</c> is - and a
+    /// prefab can set both. The Snowball's impact does, and delivers its cold twice: the
+    /// overlay said 5 and the bar said 10 until this was read off the prefab. Every other
+    /// blast in 2.4.b is <c>auto</c> alone, which is why four in-game measurements never
+    /// hinted at it. Zero means the AOE only ever fires from a TimeEvent, and nothing lands on
+    /// the spawn itself.
+    /// </summary>
+    private static int Firings(AOE aoe) => (aoe.auto ? 1 : 0) + (aoe.onEnable ? 1 : 0);
 
     /// <summary>
     /// <c>AOE.GetFactor</c> at point-blank range, or zero where the blast would not reach the

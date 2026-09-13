@@ -194,6 +194,9 @@ internal static class ItemDebug
         StickyItemComponent a => $" thorns={a.addThornsToStuckPlayer} weight={a.addWeightToStuckPlayer}"
             + $" throwCharge={a.throwChargeRequirement}",
         ShelfShroom a => BreaksInto(a),
+        Breakable a => $" onCollision={a.breakOnCollision} minVelocity={a.minBreakVelocity}"
+            + $" items=[{string.Join(", ", (a.instantiateOnBreak ?? new List<GameObject>()).ConvertAll(g => g == null ? "<null>" : g.name))}]"
+            + string.Concat((a.instantiateNonItemOnBreak ?? new List<GameObject>()).ConvertAll(g => Prefab(" spawns", g))),
         VineShooter a => $" maxLength={a.maxLength}u -> {a.maxLength * CharacterStats.unitsToMeters}m",
         MagicBean a => Beanstalk(a),
         Action_Spawn a => Spawns(a),
@@ -636,6 +639,7 @@ internal static class ItemDebug
                 ? $" affliction={a.affliction.GetAfflictionType()} totalTime={a.affliction.totalTime}"
                 : "")
             + $" factorPow={a.factorPow} ignoreFactor={a.ignoreFactor}"
+            + $" auto={a.auto} onEnable={a.onEnable}"
             + (string.IsNullOrEmpty(a.illegalStatus) ? "" : $" illegalStatus={a.illegalStatus}")
             + (a.cooksItems ? " cooksItems" : "")
             + (a.addtlStatus != null && a.addtlStatus.Length > 0

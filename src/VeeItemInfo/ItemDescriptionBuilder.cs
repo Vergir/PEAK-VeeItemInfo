@@ -232,6 +232,7 @@ internal static class ItemDescriptionBuilder
         { typeof(VineShooter), DescribeVineShooter },
         { typeof(MagicBean), DescribeMagicBean },
         { typeof(ShelfShroom), DescribeShelfShroom },
+        { typeof(Breakable), DescribeBreakable },
         { typeof(Action_MoraleBoost), DescribeMoraleBoost },
         { typeof(Dynamite), DescribeDynamite },
         { typeof(Action_Spawn), DescribeSpawn },
@@ -949,6 +950,29 @@ internal static class ItemDescriptionBuilder
         // The 2.1.a spawn holds one healing blast and two AOEs re-firing every half second
         // for as long as it lives; no radius, because the reach is not what a player acts on.
         DescribeBlasts(((ShelfShroom)component).instantiateOnBreak, parts, showRange: false);
+    }
+    private static void DescribeBreakable(Component component, Parts parts)
+    {
+        // What a thrown item does when it shatters. Breakable spawns two kinds of thing:
+        // items (a Coconut's halves, a nest's egg), which are the player's to discover and
+        // are not named, and non-item prefabs, which is where an effect lives - a Snowball's
+        // impact is an AOE of cold. Only the second kind is walked.
+        //
+        // And only where shattering is the item's use. An Antidote shatters into its cloud
+        // too, but an Antidote is for drinking - it has uses to spend - and listing the
+        // cloud beside the drink read as the same cure twice at two strengths. An item with
+        // no consume action and no uses has nothing else to do but be thrown.
+        Breakable breakable = (Breakable)component;
+        if (breakable.instantiateNonItemOnBreak == null || parts.Consumable
+            || parts.Item.GetComponent<Action_ReduceUses>() != null)
+        {
+            return;
+        }
+
+        foreach (GameObject prefab in breakable.instantiateNonItemOnBreak)
+        {
+            DescribeBlasts(prefab, parts, showRange: false);
+        }
     }
     private static void DescribeMoraleBoost(Component component, Parts parts)
     {
