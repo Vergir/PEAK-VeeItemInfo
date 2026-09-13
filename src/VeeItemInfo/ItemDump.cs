@@ -94,8 +94,8 @@ internal static class ItemDump
 
         File.WriteAllText(path, text.ToString());
 
-        // The same rows as a page, beside the text: the public preview is this dump rendered.
-        string pagePath = Path.ChangeExtension(path, ".html");
+        // The same rows as a page, beside the text: the showcase is this dump rendered.
+        string pagePath = Path.Combine(Paths.BepInExRootPath, "VeeItemInfo-showcase.html");
         File.WriteAllText(pagePath, PreviewPage.Render(rows));
 
         Plugin.Log.LogInfo($"[dump] {items.Count} items, {failed} failed -> {path} and {pagePath}");
