@@ -46,6 +46,7 @@ public partial class Plugin : BaseUnityPlugin
         Overlay.Destroy();
         StatusIcons.Reset();
         ItemDump.Forget();
+        ItemDescriptionBuilder.Forget();
         Log.LogInfo($"Plugin {Name} is unloaded!");
     }
 

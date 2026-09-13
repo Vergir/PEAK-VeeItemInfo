@@ -110,6 +110,23 @@ internal static class EffectFormatter
     }
 
     /// <summary>
+    /// A change over time that may not land at all - "+ 0/20 &lt;poison&gt; / 8s". The sign
+    /// leads on its own, then the two outcomes as a slash-pair, then the duration as
+    /// <see cref="OverTime"/> writes it. Used for a mushroom that may or may not be the
+    /// poisonous one, when the overlay has been told not to tell them apart.
+    /// </summary>
+    internal static string ConditionalOverTime(float total, float seconds, string effect)
+    {
+        if (total == 0f || seconds <= 0f)
+        {
+            return "";
+        }
+
+        return Colored((total > 0f ? "+" : "-") + " 0/" + Scaled(Mathf.Abs(total)), effect)
+            + EffectColors.Neutral + " / " + Seconds(seconds) + "</color>";
+    }
+
+    /// <summary>
     /// An unsigned amount and its icon, for values that have no direction. Takes a 0-1
     /// fraction like every other formatter here - weight is a status the game sets through
     /// SetStatus, so it is on the same scale as the rest and scales the same way.

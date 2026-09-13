@@ -84,7 +84,7 @@ internal static class ItemDescriptionBuilder
         layout.Add(Block.Weight, EffectFormatter.Plain(weight, "Weight"));
 
         // Each component is looked up rather than tested against in turn - see Handlers.
-        Parts parts = new(layout, effects, itemGameObj, consumable);
+        Parts parts = new(layout, effects, item, consumable);
 
         for (int i = 0; i < itemComponents.Length; i++)
         {
@@ -118,6 +118,21 @@ internal static class ItemDescriptionBuilder
             {
                 parts.Source = i;
                 describe(itemComponents[i], parts);
+            }
+        }
+
+        // The safe half of a mushroom pair, told not to give itself away: it shows the poison
+        // its twin carries as a coin flip, exactly as the twin does. Zero on the roll is the
+        // truth about this one.
+        if (PluginConfig.HidePoisonTwins.Value && itemGameObj.GetComponent<Action_InflictPoison>() == null)
+        {
+            Action_InflictPoison? twin = PoisonousTwin(item);
+            if (twin != null)
+            {
+                Collect(effects, itemComponents.Length,
+                    EffectFormatter.ConditionalOverTime(twin.poisonPerSecond * twin.inflictionTime,
+                        twin.inflictionTime, "Poison"),
+                    Onset.OverTime, "Poison", twin.poisonPerSecond);
             }
         }
 
@@ -269,14 +284,18 @@ internal static class ItemDescriptionBuilder
     /// </summary>
     private sealed class Parts
     {
-        internal Parts(DescriptionLayout layout, List<EffectLine> effects, GameObject item,
+        internal Parts(DescriptionLayout layout, List<EffectLine> effects, Item entity,
             bool consumable)
         {
             Layout = layout;
             Effects = effects;
-            Item = item;
+            Entity = entity;
+            Item = entity.gameObject;
             Consumable = consumable;
         }
+
+        /// <summary>The item component itself, for the branch that looks up its twin.</summary>
+        internal Item Entity { get; }
 
         internal DescriptionLayout Layout { get; }
 
@@ -481,10 +500,104 @@ internal static class ItemDescriptionBuilder
         // suffix already says this is spread over time, and the lead-in was the
         // only English on an otherwise symbolic line.
         Action_InflictPoison effect = (Action_InflictPoison)component;
-        Collect(parts.Effects, parts.Source,
-            EffectFormatter.OverTime(effect.poisonPerSecond * effect.inflictionTime,
-                effect.inflictionTime, "Poison"),
-            Onset.OverTime, "Poison", effect.poisonPerSecond);
+        float total = effect.poisonPerSecond * effect.inflictionTime;
+
+        // A poisonous mushroom whose safe twin shares its name, with the overlay told not to
+        // tell them apart: the poison becomes a coin flip on both. See PoisonousTwin.
+        string text = PluginConfig.HidePoisonTwins.Value && HasSafeTwin(parts.Entity)
+            ? EffectFormatter.ConditionalOverTime(total, effect.inflictionTime, "Poison")
+            : EffectFormatter.OverTime(total, effect.inflictionTime, "Poison");
+
+        Collect(parts.Effects, parts.Source, text, Onset.OverTime, "Poison", effect.poisonPerSecond);
+    }
+
+    /// <summary>
+    /// Every other item the game gives the same name as this one. The game itself is what
+    /// pairs a mushroom with its poisonous twin - Bugle Shroom is the name of both Mushroom
+    /// Lace and Mushroom Lace Poison - so the name is the game's own key here rather than a
+    /// proxy for behaviour. Built once from the item database and kept until a hot reload.
+    /// </summary>
+    private static IEnumerable<Item> Twins(Item item)
+    {
+        twinsByName ??= BuildTwins();
+        string name = SafeName(item);
+        if (!twinsByName.TryGetValue(name, out List<Item>? twins))
+        {
+            yield break;
+        }
+
+        foreach (Item twin in twins)
+        {
+            // A held item is a clone of its prefab; the prefab is not its own twin.
+            if (twin.gameObject.name != item.gameObject.name.Replace("(Clone)", ""))
+            {
+                yield return twin;
+            }
+        }
+    }
+
+    private static Dictionary<string, List<Item>>? twinsByName;
+
+    /// <summary>Drops the twin table, for a hot reload.</summary>
+    internal static void Forget() => twinsByName = null;
+
+    private static Dictionary<string, List<Item>> BuildTwins()
+    {
+        Dictionary<string, List<Item>> byName = new(StringComparer.Ordinal);
+        foreach (Item entry in StatusIcons.AllItems())
+        {
+            string name = SafeName(entry);
+            if (!byName.TryGetValue(name, out List<Item>? list))
+            {
+                list = new List<Item>();
+                byName[name] = list;
+            }
+
+            list.Add(entry);
+        }
+
+        return byName;
+    }
+
+    private static string SafeName(Item item)
+    {
+        try
+        {
+            return item.GetName();
+        }
+        catch (Exception)
+        {
+            return item.gameObject.name;
+        }
+    }
+
+    /// <summary>A twin that carries no poison, for the poisonous one to hedge against.</summary>
+    private static bool HasSafeTwin(Item item)
+    {
+        foreach (Item twin in Twins(item))
+        {
+            if (twin.GetComponent<Action_InflictPoison>() == null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The poison a twin carries, for the safe one to hedge with.</summary>
+    private static Action_InflictPoison? PoisonousTwin(Item item)
+    {
+        foreach (Item twin in Twins(item))
+        {
+            Action_InflictPoison? poison = twin.GetComponent<Action_InflictPoison>();
+            if (poison != null)
+            {
+                return poison;
+            }
+        }
+
+        return null;
     }
     private static void DescribeAddOrRemoveThorns(Component component, Parts parts)
     {

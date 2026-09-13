@@ -579,7 +579,7 @@ internal static class StatusIcons
     /// Resources rather than a singleton accessor: the database is a loaded ScriptableObject
     /// either way, and this needs no guess at the accessor's shape.
     /// </summary>
-    private static IEnumerable<Item> AllItems()
+    internal static IEnumerable<Item> AllItems()
     {
         foreach (ItemDatabase database in Resources.FindObjectsOfTypeAll<ItemDatabase>())
         {
