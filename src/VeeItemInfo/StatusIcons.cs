@@ -1023,27 +1023,4 @@ internal static class StatusIcons
         // good as this build too.
         EffectFormatter.ForgetClearable();
     }
-
-    private static string lastLogged = "";
-
-    /// <summary>
-    /// The icon state, logged when it changes rather than every time it is asked for.
-    ///
-    /// This is a snapshot of something that settles once and then holds, and it was being
-    /// written every refresh - a line a second saying the same thing, alongside three others
-    /// doing the same. Four state dumps at one hertz drowned the lines that report an actual
-    /// event, which is the whole reason to keep a log.
-    /// </summary>
-    internal static void LogDiagnostics()
-    {
-        string state = $"[icons] mapped={Tags.Count} "
-            + $"atlas={(atlas == null ? "none" : $"{atlas.width}x{atlas.height}")} "
-            + $"glyphs={spriteAsset?.spriteCharacterTable?.Count ?? -1} attempts={attempts}";
-
-        if (state != lastLogged)
-        {
-            lastLogged = state;
-            Plugin.Log.LogInfo(state);
-        }
-    }
 }

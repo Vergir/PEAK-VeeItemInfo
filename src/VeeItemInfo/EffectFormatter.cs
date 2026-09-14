@@ -221,15 +221,6 @@ internal static class EffectFormatter
             }
         }
 
-        // Logged once per icon build rather than per description, and only with debug logging
-        // on. The list is derived now, so "what does a clear-all actually claim to remove" is
-        // no longer answerable by reading the source.
-        if (PluginConfig.DebugLogging.Value)
-        {
-            Plugin.Log.LogInfo($"[clear] a clear-all lists: {string.Join(", ", curable)}"
-                + $" (character {(afflictions == null ? "absent, curability unchecked" : "read")})");
-        }
-
         return curable.ToArray();
     }
 

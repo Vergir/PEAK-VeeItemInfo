@@ -112,8 +112,6 @@ internal static class ItemInfoController
         if (PluginConfig.DebugLogging.Value)
         {
             ItemDebug.LogUntagged(description);
-            Overlay.LogDiagnostics();
-            StatusIcons.LogDiagnostics();
         }
     }
 }

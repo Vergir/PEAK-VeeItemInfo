@@ -320,41 +320,4 @@ internal static class Overlay
         cachedHeight = 0f;
         nextCreateAttempt = 0f;
     }
-
-    /// <summary>Dumps the numbers behind the current placement, for diagnosing position bugs.</summary>
-    private static string lastLogged = "";
-
-    /// <summary>
-    /// Where the overlay ended up, logged when it moves rather than every refresh.
-    ///
-    /// The slot it follows drifts by fractions as the HUD animates, so the figures are
-    /// rounded before they are compared - otherwise "has this changed" is true almost every
-    /// time and the throttle does nothing.
-    /// </summary>
-    internal static void LogDiagnostics()
-    {
-        if (rect == null || hudRect == null || textMesh == null)
-        {
-            Log("[pos] overlay not created yet");
-            return;
-        }
-
-        string slot = TryGetSlotTopCentre(out Vector2 top)
-            ? $"({Mathf.Round(top.x)}, {Mathf.Round(top.y)})"
-            : "<no matching slot>";
-
-        Log($"[pos] hud={hudRect.rect} slotTopCentre={slot} "
-            + $"anchoredPos=({Mathf.Round(rect.anchoredPosition.x)}, {Mathf.Round(rect.anchoredPosition.y)}) "
-            + $"textHeight={textMesh.preferredHeight:F0} "
-            + $"visible={textMesh.gameObject.activeSelf} chars={textMesh.text.Length}");
-    }
-
-    private static void Log(string state)
-    {
-        if (state != lastLogged)
-        {
-            lastLogged = state;
-            Plugin.Log.LogInfo(state);
-        }
-    }
 }
