@@ -1253,7 +1253,7 @@ internal static class ItemDescriptionBuilder
     /// Guarded at every step: these are prefab references, and a missing one is a null the day
     /// the game reorganises them.
     /// </summary>
-    private static float RopeSegmentLength(RopeShooter shooter)
+    internal static float RopeSegmentLength(RopeShooter shooter)
     {
         RopeAnchorWithRope? anchorPrefab = shooter.ropeAnchorWithRopePref == null
             ? null
