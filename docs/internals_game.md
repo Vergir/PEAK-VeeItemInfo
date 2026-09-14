@@ -1,12 +1,12 @@
 # PEAK, as the overlay reads it
 
-What the mod knows about the game and how each fact was established. Everything here is
-something the code depends on: a formula it models, a field it reads, a trap it has already
-fallen into once. It is not a wiki. Where the wiki and the game disagree, this says what the
-game does and how that was checked.
+What the mod knows about the game and how each fact is established. Everything here is
+something the code depends on: a formula it models, a field it reads, a trap in the way the
+game stores a value. It is not a wiki. Where the wiki and the game disagree, this says what
+the game does and how that was checked.
 
 Every fact holds on the current game build. When a game update changes one, the fact changes
-here, not a footnote beside it.
+here.
 
 Companion documents: [internals_infra.md](internals_infra.md) is how the mod itself is put
 together; [design.md](design.md) is what the overlay chooses to say and why.
@@ -15,21 +15,18 @@ together; [design.md](design.md) is what the overlay chooses to say and why.
 
 ## Reading a value out of the game
 
-The mod has drawn a confident wrong answer from decompiled code often enough that the rules
-for reading one are worth stating before any of the facts.
+Decompiled code is easy to misread. These are the rules for turning it into a fact.
 
-**A field initialiser is not the value on the prefab.** `public float bonusStamina = 0.5f`
-reads like a fact and is only a fallback for a prefab that does not serialize the field. The
-Ritual Dagger's class declares `0.5f` and `10f`; the prefab ships `1` and `0`. A decompile said
-"+50 stamina and ten seconds of infinite stamina"; the game gives +100 and no infinite stamina
-at all. Never quote a default as the answer - add the field to the `[item]` dump and read it
-off a held item.
+**A field initialiser is not the value on the prefab.** `public float bonusStamina = 0.5f` is
+only a fallback for a prefab that does not serialize the field. The Ritual Dagger's class
+declares `0.5f` and `10f`; the prefab ships `1` and `0`, and the game gives +100 stamina and
+no infinite stamina at all. Never quote a default as the answer - add the field to the `[item]`
+dump and read it off a held item.
 
 **A serialized field can exist and be ignored.** `StatusFieldStatus.statusAmountPerSecond` is
-right there in the inspector on every lantern, and `StatusFieldBase.IncreaseStatus` never
-reads it: it passes the *main* field's amount to every additional status. The Faerie Lantern
-was reporting per-status rates the game does not use. Read the method that consumes a field
-before believing the field.
+in the inspector on every lantern, and `StatusFieldBase.IncreaseStatus` never reads it: it
+passes the *main* field's amount to every additional status. Read the method that consumes a
+field before believing the field.
 
 **A `const` is inlined at the call site.** Writing `CharacterAfflictions.STATUS_INCREMENT`
 bakes `0.025` into the mod's own assembly, so a patch that changed it would leave a shipped
@@ -40,54 +37,39 @@ and the cooking maximum, naming each through `nameof` so a rename still breaks t
 **A prefab asset is never active.** Every prefab the mod walks - a break spawn, an explosion,
 a constructed stovetop - lives in the asset database rather than a scene, so nothing in it is
 active in any hierarchy. The no-argument `GetComponentInParent<T>()` and
-`GetComponentsInChildren<T>()` skip inactive objects and quietly return nothing. This cost a
-testing round trip: the lifetime walk found no `RemoveAfterSeconds`, every repeating blast came
-out durationless, and Remedy Fungus rendered its instant heal and none of its field.
-`includeInactive` is mandatory, not a precaution.
+`GetComponentsInChildren<T>()` skip inactive objects and quietly return nothing.
+`includeInactive` is mandatory.
 
-**The component list is not the whole behaviour.** Three items were declared "the wiki is
-wrong, they have no spores component". They have none, and they cure spores anyway, because
+**The component list is not the whole behaviour.** First Aid Kit, Antidote and Medicinal Root
+carry nothing about spores and cure spores anyway, because
 `CharacterAfflictions.SubtractStatus` recurses into Spores whenever Poison is reduced on
 purpose. `CharacterAfflictions` layers rules on top of what the prefab carries; grep there
 before declaring an item does not do something.
 
-**Read the whole method.** "Shroomberry effects are randomised per run" came from reading half
-of `GenerateEffectList`. The second half spends its good and bad quotas on the first slots in
-order, so a berry's valence is stable across runs.
+**Read the whole method.** The first half of `GenerateEffectList` shuffles Shroomberry effects
+every run; the second half spends its good and bad quotas on the first slots in order, so a
+berry's valence is stable across runs.
 
-**Ask for the component, not the name.** Every name-keyed lookup in the description chain has
-been retired. A name goes stale silently: `Transform.Find` returns null straight into a
-`GetComponent`, and the first sign is a line quietly missing. `Constructable` asks whether the
-thing it builds has a `Campfire` rather than whether it is called `PortableStovetop_Placed`;
-`Action_Spawn` walks the spawned prefab for a `RemoveAfterSeconds` rather than knowing it is
-`VFX_Sunscreen` with an `AOE` child; the lantern reader walks for a `StatusField` rather than
-naming two prefabs and two child paths; the anti-rope cannon is the one carrying `Antigrav`
-and the anti-rope spool says `isAntiRope` itself. The one deliberate exception is a mushroom's
-poisonous twin, found by shared *display name*, because the game itself names both "Bugle
-Shroom" - there the name is the game's own key, not a stand-in for a component.
-
-**Prefab hierarchies move.** The Remedy Fungus reader once reached through four hardcoded child
-names. A later build put a single healing AOE in `HealingPuffShroomSpawn` and dropped the
-poison child, so `Find` returned null, `Build` threw, and the item showed nothing at all - not
-even its weight - while the log filled once per poll.
+**Ask for the component, not the name.** A name goes stale silently: `Transform.Find` returns
+null straight into a `GetComponent`, and the first sign is a line quietly missing.
+`Constructable` asks whether the thing it builds has a `Campfire`; `Action_Spawn` walks the
+spawned prefab for what it holds; the lantern reader walks for a `StatusField`; the anti-rope
+cannon is the one carrying `Antigrav` and the anti-rope spool says `isAntiRope` itself. The
+one exception is a mushroom's poisonous twin, found by shared *display name*, because the
+game itself names both "Bugle Shroom" - there the name is the game's own key.
 
 **A list the game also keeps is a list to read, not to copy.** What the healing amulet treats
 is `Affliction_HealAll.statusesToHeal`; what a clear-all removes is whatever `StatusIsCurable`
-says. Both are read now, so a status becoming curable is followed rather than remembered.
+says. Both are read, so a status becoming curable is followed rather than remembered.
 `Assembly-CSharp` is publicized at build time, which is what makes the private ones readable
 and what lets `nameof(CharacterItems.Update)` name a private Unity message as a patch target.
 
-**Verify against the game, not just the source.** The wiki is a better guide to *how a thing
-behaves* than a single class, even where its numbers are loose. Read code to find which fields
-hold the values; trust testing for which code path actually runs. Three cases where testing
-overturned a reading:
-
-- Thorns. `UpdateWeight` applies one status step per increment, so a thorn looked like one
-  step. Prickleberry showed 10, not 5: a thorn is two increments.
-- Scout's Tenacity. `HealingAmulet` contains an `IItemPocketBehavior` that heals gradually
-  while carried. It is dead or beta code; the amulet works instantly through
-  `Peak.Action_HealingGem`.
-- Poison and spores, above.
+**Verify against the game, not just the source.** The assembly contains code no live item
+reaches - Scout's Tenacity carries a pocket behaviour that would heal gradually while carried,
+and the amulet works instantly through `Peak.Action_HealingGem`. A component's presence is
+not proof that it runs. The wiki (`peak.wiki.gg`) is a better guide to *how a thing behaves*
+than a single class, even where its numbers are loose. Read code to find which fields hold the
+values; trust testing for which code path actually runs.
 
 ---
 
@@ -97,8 +79,8 @@ overturned a reading:
 multiplies by the configured status scale (100 by default) to display.
 
 **The step.** `CharacterAfflictions.STATUS_INCREMENT` is `0.025`, the smallest change the bars
-record. It is the same number behind the weight per carry unit, the status per thorn increment,
-and the 1/40 that `RoundStatus` snaps to.
+record. It is the same number behind the weight per carry unit and the status per thorn
+increment.
 
 **The game floors, it does not round.** Both `AddStatus` and `SubtractStatus` bank the amount
 and pay out `FloorToInt(banked / STATUS_INCREMENT)` whole steps, **discarding the remainder**
@@ -115,38 +97,37 @@ into 20.
 
 **So a repeating effect is not `amount / period`.** Remedy Fungus hands over `0.015` every half
 second. That is under the step, so nothing lands on the first tick and `0.025` comes off on the
-second: one step per second, 2.5 display units, against a raw 3. Dividing overstates by a
-fifth. A repeating effect is worth `0.025 / (ticks-to-reach-a-step x period)`;
-`ItemDescriptionBuilder.TickedRate` is the one place that models it.
+second: one step per second, 2.5 display units, against a raw 3. A repeating effect is worth
+`0.025 / (ticks-to-reach-a-step x period)`; `ItemDescriptionBuilder.TickedRate` models it.
 
 **The last payout never lands.** Payouts fall at one step, two steps, and so on, while
 `RemoveAfterSeconds` destroys the spawn at the duration itself, so a payout on that boundary
-never happens. A 15 second fungus field pays 14 times, which is what in-game testing found.
+never happens. A 15 second fungus field pays 14 times, which is what in-game testing shows.
 `TickedTotal` counts payouts rather than multiplying out.
 
 **Petrify is whole points, not a fraction.** `CharacterData.petrifyAmount` is an `int`, and
 every route into it - `AddStatus`, `SetStatus`, `SubtractStatus` - runs
 `Mathf.FloorToInt(amount * 100f)` before calling `AddPetrify(int)`. A `petrifyPerUse` of
-`0.075` is **7**; reporting 7.5 overstated every amulet whose cost was not a whole percent.
-Floor to whole points on the game's 0-100 scale first, then put the result on the display
-scale. Getting the fraction and the points backwards is a 100x error: `VFX_ExplosionGhost`
-carries `Petrify = 20` in points, which flooring against the step would read as eight hundred.
+`0.075` is **7**. Floor to whole points on the game's 0-100 scale first, then put the result on
+the display scale. Getting the fraction and the points backwards is a 100x error:
+`VFX_ExplosionGhost` carries `Petrify = 20` in points, which flooring against the step would
+read as eight hundred.
 
 **Weight.** `UpdateWeight` sums `Item.CarryWeight` across the inventory and does
 `SetStatus(Weight, STATUS_INCREMENT * total)`, so weight is a status fraction like any other.
 `CarryWeight` is a property and must not be reimplemented: it returns **0** when the ascent's
-item-weight modifier is `-1`, not one less, so a hand-rolled `carryWeight + modifier` showed a
-weight on weightless items.
+item-weight modifier is `-1`, not one less.
 
 **Thorns.** `UpdateWeight` sets Thorns to one step per *increment*, and a thorn is not one
 increment: `GetTotalThornStatusIncrements` sums `ThornOnMe.GetThornDamage()`, which is the
 thorn's `thornDamage` scaled by `Ascents.etcDamageMultiplier`. At ascent zero that is two
-increments per thorn - the Prickleberry measurement. The thorns belong to the character, a pool
-of `ThornOnMe` objects under the ragdoll in `refs.afflictions.physicalThorns`, so the figure
-is read off one of them (arrows share the pool and are skipped by `isThorn`). Two custom-run
-switches make the answer **zero**, and zero is a real answer: `Hazard_Thorns` off makes
-`AddThorn` return before doing anything, and `EtcDamage` at zero makes the multiplier zero.
-With no character to read, the fallback is the measured two increments.
+increments per thorn: a Prickleberry's two thorns read 10, not 5. The thorns belong to the
+character, a pool of `ThornOnMe` objects under the ragdoll in
+`refs.afflictions.physicalThorns`, so the figure is read off one of them (arrows share the
+pool and are skipped by `isThorn`). Two custom-run switches make the answer **zero**, and zero
+is a real answer: `Hazard_Thorns` off makes `AddThorn` return before doing anything, and
+`EtcDamage` at zero makes the multiplier zero. With no character to read, the fallback is the
+measured two increments.
 
 The Cactus is different: `StickyItemComponent.addThornsToStuckPlayer` is added straight to the
 *increment* count in `UpdateWeight`, so it is worth one step per unit, not two.
@@ -159,9 +140,8 @@ if (statusType == Poison && !decreasedNaturally && character.IsLocal)
 ```
 
 Every deliberate poison reduction takes the same amount off Spores. One-way - adding poison
-adds no spores - and not applied to the passive per-second decay. First Aid Kit, Antidote and
-Medicinal Root cure spores through this and nothing else; a lantern that cures poison cures
-spores at the same rate; a healing blast likewise, because `AOE.Explode` goes through
+adds no spores - and not applied to the passive per-second decay. A lantern that cures poison
+cures spores at the same rate, and so does a healing blast, because `AOE.Explode` goes through
 `AdjustStatus`.
 
 **`statusSum` sums every status including Weight**, and weight comes from the whole
@@ -169,14 +149,13 @@ inventory, so any formula using it depends on what the player is carrying. The S
 the one the overlay shows: `InflictAttack` does an instant `AddStatus(Poison, 0.025)` and then
 a poison-over-time totalling `max(0.5, (1 - statusSum) + 0.05)` - 50 at full status, 105 at
 none, more damage the healthier you are. Both bounds are literals in the method body;
-`totalPoisonTime` beside them is a field and is read. (Hiding the poison line when the
-scorpion is dead was tried and reverted: mob state does not update on equip.)
+`totalPoisonTime` beside them is a field and is read. The poison is shown even when the
+scorpion is dead, because mob state does not update on equip.
 
 **Afflictions over time are exactly rate times time.** `Affliction_AdjustDrowsyOverTime` and
 `Affliction_AdjustColdOverTime` apply `statusPerSecond * deltaTime` every frame, so the total
-is `statusPerSecond * totalTime`. An earlier version rounded to multiples of 2.5 for no reason.
-The Heat Pack's total is 2160 on a scale that stops at 100, which is why the overlay states
-some effects as a rate instead - see [design.md](design.md).
+is `statusPerSecond * totalTime`. The Heat Pack's total is 2160 on a scale that stops at 100,
+which is why the overlay states some effects as a rate instead - see [design.md](design.md).
 
 ---
 
@@ -184,29 +163,20 @@ some effects as a rate instead - see [design.md](design.md).
 
 There are **two clear-alls, and they do not ask the same question.**
 
-`CharacterAfflictions.ClearAllStatus` - the Chaos berry, the Ritual Dagger's feed effect, and
+`CharacterAfflictions.ClearAllStatus` - the Ritual Dagger's feed effect, and
 `Affliction_ClearAllStatus` - keeps no list. It walks every `STATUSTYPE` and asks
-`StatusIsCurable`, which refuses Crab, Weight, Thorns and Arrow outright and defers Curse and
+`StatusIsCurable`, which refuses Weight, Thorns and Arrow outright and defers Curse and
 Petrify to its callers.
 
 `Action_ClearAllStatus` - the component on **Napberry** and the **Book of Bones**, and nothing
 else - asks nothing. It keeps a private `defaultExclusions` of Weight, Petrify, Arrow and
 Thorns, plus a per-item `otherExclusions`, and calls `SubtractStatus` directly.
 
-The one status separating the two rules is **Crab**, and Crab is dead: the only thing in the
-assembly that adds it is an editor `[ContextMenu("Test Crab")]`. Napberry's
-`otherExclusions = [Crab]` restates a rule the game enforces anyway, so one derived list serves
-both paths. If Crab ever comes alive, the item path needs its own list read off
-`defaultExclusions`.
+The two rules agree on every status a live item can carry, so one derived list serves both.
 
-An older note named Cure-All, Pandora's Lunchbox and the Blowgun dart as clear-all items. A
-walk of every item prefab found none of the three carries `Action_ClearAllStatus`. Cure-All
-carries `Action_AddOrRemoveThorns` with a count of **-5**, which genuinely removes five thorns
-and is almost certainly how it came to be filed as a clear-all.
-
-The Chaos affliction's `OnApplied` calls `ClearAllStatus(excludeCurse: false)` and then
-redistributes over its own list of eight: Cold, Hot, Poison, Drowsy, Injury, Hunger, Spores and
-Curse. So Curse is both cleared and refillable, and Thorns is in neither half.
+**Cure-All is not a clear-all.** It carries `Action_AddOrRemoveThorns` with a count of **-5**,
+which genuinely removes five thorns and is easily mistaken for clearing everything. Pandora's
+Lunchbox and the Blowgun dart are not clear-alls either.
 
 ---
 
@@ -225,10 +195,10 @@ reduced share. A `range` of zero means `Explode` returns before doing anything.
 ### An AOE can fire twice on spawn
 
 `Start` calls `Explode` when `auto` is set and `OnEnable` calls it again when `onEnable` is,
-and a prefab can set both. The Snowball's impact does, and delivers its cold twice: the overlay
-said 5 and the bar said 10. Each firing is floored on its own - two payouts of 0.05, not one of
-0.124. Every other blast is `auto` alone, which is why four in-game measurements never hinted
-at it. Zero firings means the AOE only ever goes off from a `TimeEvent`.
+and a prefab can set both. The Snowball's impact does, and delivers its cold twice: 10 on the
+bar from an amount of 5. Each firing is floored on its own - two payouts of 0.05, not one of
+0.124. Every other blast is `auto` alone. Zero firings means the AOE only ever goes off from a
+`TimeEvent`.
 
 ### The point-blank distance is 0.64 units, and it is empirical
 
@@ -248,31 +218,30 @@ fell in a whole-step window - a range of distances rather than a point:
 
 **A measurement is only as sharp as its step count, and only bounds from below if it falls two
 steps short.** A reading one step below a blast's maximum bounds nothing from below, because
-the upper half of that window is `factor < 1`, which every distance satisfies. Three readings
-in a row said nothing but "smaller than". The Faerie Lantern settled it by landing *two* steps
-short of its advertised 25 - and caught a wrong value on the way, since the previous 0.5
-predicted 22.5 for it. When another figure needs pinning down, look for many steps, a small
-radius, and a reading well clear of the maximum. `AOE_Cold`, with a radius of 2 and three
-steps, can only ever say `d <= 1.11`.
+the upper half of that window is `factor < 1`, which every distance satisfies. The Faerie
+Lantern is the only reading that lands *two* steps short of its advertised amount, and the
+only one that gives a floor. When another figure needs pinning down, look for many steps, a
+small radius, and a reading well clear of the maximum. `AOE_Cold`, with a radius of 2 and
+three steps, can only ever say `d <= 1.11`.
 
 **It is not simply chest height.** An item that goes off in your hand explodes at hand height,
 and three of the four readings are held explosions, which is why the bracket sits well under
 the metre and a half a torso stands at. One constant covers both cases because nothing yet
 distinguishes a held blast from one at your feet, and no measurement separates them.
 
-**It is readable in principle and left alone on purpose.** `Character.Center` is the torso
+**It is readable in principle and left a constant on purpose.** `Character.Center` is the torso
 bodypart's position - a live ragdoll position that moves as you crouch and climb. Sampling it
 would make a number drift while you hold an item, which nothing else in the overlay does.
 
 ### A distance transfers between blasts; a factor does not
 
-The mod once carried a flat `0.9` fitted to Remedy Fungus and applied it to every AOE. Remedy
-Fungus is `range = 5` and dynamite is `range = 12`, both `factorPow = 0.5`, so one standing
-position gives 0.90 at one and 0.96 at the other - a full status step apart. A distance is a
-property of the character, so it does transfer; `Blast` holds the distance and derives each
-AOE's factor from its own `range`, `factorPow`, `minFactor` and `ignoreFactor`. Only the
-one-off half of a blast needs the distance at all: any factor between 0.5 and 1 lands a
-repeating 0.015-a-tick blast on the same one step per second.
+A factor belongs to one blast. Remedy Fungus is `range = 5` and dynamite is `range = 12`, both
+`factorPow = 0.5`, so one standing position gives 0.90 at one and 0.96 at the other - a full
+status step apart. A distance is a property of the character, so it does transfer; `Blast`
+holds the distance and derives each AOE's factor from its own `range`, `factorPow`,
+`minFactor` and `ignoreFactor`. Only the one-off half of a blast needs the distance at all:
+any factor between 0.5 and 1 lands a repeating 0.015-a-tick blast on the same one step per
+second.
 
 ### A repeating `TimeEvent` turns a burst into a field
 
@@ -285,7 +254,7 @@ second. Zero lifetime reads as "no duration to state".
 
 A lit lantern or candle keeps a `StatusField` switched on: a radius, a main
 `statusAmountPerSecond`, and `additionalStatuses` that all move at the **main** rate (their own
-per-second fields are ignored, see above). `tickBased` changes nothing either: it applies
+per-second fields are ignored, see above). `tickBased` changes nothing: it applies
 `statusAmountPerSecond * timeBetweenTicks` once per tick, the same rate. A field naming the
 same status twice moves it twice as fast. `IncreaseStatus` goes through `AdjustStatus`, which
 sends anything negative to `SubtractStatus`, so the spores coupling applies. The Candle removes
@@ -309,11 +278,10 @@ walk includes inactive objects but skips an emitter whose *own* object is off.
 
 `RPC_CookingExplode` explicitly handles the local character still holding the item, so a
 cooking explosion going off point-blank is the ordinary case: a stovetop advertising 20 injury
-gives 17.5. The blast radius is `AOE.range`, not a collider - reading a `SphereCollider` was the
-first attempt and silently found nothing. Where the prefab holds no AOE that affects a
-character but does hold a `StatusField`, cooking makes a field you stand in rather than a
-blast; where it holds neither, the "explosion" is a puff with nothing in it and the item is
-simply gone (a balloon pops, a snowball melts).
+gives 17.5. The blast radius is `AOE.range`, not a collider. Where the prefab holds no AOE that
+affects a character but does hold a `StatusField`, cooking makes a field you stand in rather
+than a blast; where it holds neither, the "explosion" is a puff with nothing in it and the
+item is simply gone (a balloon pops, a snowball melts).
 
 ---
 
@@ -324,8 +292,8 @@ figure that turns hip height into the altitude on the end screen. Every radius, 
 raycast length in the game is in Unity units and needs it; printing one with an "m" after it
 understates the distance by well over a third.
 
-**A number is not in the unit its name implies until you have read what consumes it.** One
-item cost four wrong answers in a row, each from reading a field and believing its name:
+**A number is not in the unit its name implies until you have read what consumes it.** Five
+fields whose names mislead:
 
 | Field | Looks like | Actually is |
 |---|---|---|
@@ -336,7 +304,7 @@ item cost four wrong answers in a row, each from reading a field and believing i
 | `RopeShooter.length` | a length | a **segment count** |
 
 Before using a field as a distance, find its consumer. `Find All References` on the decompiled
-type takes a minute and has repeatedly been the difference between right and confidently wrong.
+type takes a minute.
 
 **A local-space offset is scaled by its transform.** A joint anchor, a child position, a
 `connectedAnchor` - all shrink with the object.
@@ -349,10 +317,9 @@ the segment prefab) plus `Rope.spacing` (0.75, written as `connectedAnchor = (0,
 both local-space and so both scaled by the segment prefab's Y scale of 0.35. `(0.5 + 0.75) x
 0.35 = 0.4375` a segment; 30 segments span 13.1 units, 21 metres. Measuring from the anchor
 straight down gives 12 to 14 units and climbing one with a height-tracking mod reads about 20
-metres. Reading either offset alone is what made three earlier attempts wrong: spacing alone
-says 22.5 units, `connectedAnchor` scaled alone says 7.9. The joint is Locked on every axis
-with a zero linear limit, so nothing stretches - the rope is rigid and the figure is
-derivable.
+metres. Spacing alone would say 22.5 units, `connectedAnchor` scaled alone 7.9. The joint is
+Locked on every axis with a zero linear limit, so nothing stretches - the rope is rigid and the
+figure is derivable.
 
 **`Rope.GetLengthInMeters` is not a distance.** It returns `segments * 0.25`; its only caller
 is the rope-placed achievement counter, and it is what the spool's own UI shows. A Rope
@@ -362,22 +329,19 @@ wiki came to publish 7.5m. The overlay matches it by default so the two never di
 front of a player; a setting switches to the derived figure.
 
 **The Rope Cannon has two distances.** How far it shoots is `maxLength`, a raycast in Unity
-units; how much rope that leaves is `length`, a segment count. Both used to be read off
-`maxLength`, which was only right by coincidence: 30 units and 30 segments, so dividing the
-wrong field by four still landed on 7.5.
+units; how much rope that leaves is `length`, a segment count. They happen to be 30 and 30.
 
 ### Chain Launcher and Magic Bean
 
-`VineShooter.maxLength` is the raycast the Chain Launcher fires along, in Unity units. An old
-`/ (5f / 3f)` was a fit made before `unitsToMeters` was found and reported 30m for a chain
-that lands about 48 units away.
+`VineShooter.maxLength` is the raycast the Chain Launcher fires along, in Unity units: about 48
+units, 77 metres.
 
 `MagicBeanVine.maxLength` is written into the vine's `localScale.y` as it grows, so it reads
 like a scale - but scaling the stalk mesh by it gives 94 units, which is nonsense: the mesh's
 long axis is Z, not Y, so its bounds are not the height of the thing being scaled. Taken as
 plain Unity units it gives 32m, and a height-tracking mod reads 28m of gain on a vine that grew
 skewed, so the real length is at least that. That also matches how every other range in the
-game is authored, and it retired the last of the invented divisors (`/ 2f`).
+game is authored.
 
 ---
 
@@ -403,7 +367,7 @@ added from stage 4. It rewrites `Action_RestoreHunger.restorationAmount` and
 everywhere the overlay reads them.
 
 **Cooking switches actions off rather than removing them.** `CookingBehavior_DisableScripts`
-sets `enabled = false`, so reading a disabled component makes a cooked poisonous berry
+sets `enabled = false`, so reading a disabled component would make a cooked poisonous berry
 advertise poison it no longer inflicts. Skip disabled components everywhere.
 
 **The behaviours**, each with `cookedAmountToTrigger` and `onlyOnce`:
@@ -427,8 +391,7 @@ advertise poison it no longer inflicts. Skip disabled components everywhere.
 
 **An action flagged `OnConsumed` only fires when the item is eaten**, so it means nothing on an
 item with no `Action_Consume` or `Action_ConsumeAndSpawn`. Because the ladder adds a stamina
-action to anything, a cooked Scout's Ambition was advertising +10 stamina it can never hand
-out.
+action to anything, a cooked Scout's Ambition carries +10 stamina it can never hand out.
 
 ---
 
@@ -452,11 +415,10 @@ a skeleton. Any new `Action_*` field that gates `RunAction` wants the same treat
 feeds an item to another and is reachable by no `Action_*`. `RitualDaggerFeedBehavior` is its
 only implementor: `RPC_RitualDaggerBuff` runs on every client and skips only the character who
 was fed, so everybody else in the lobby - the feeder included - is cleared (curse and petrify
-spared), healed and handed stamina. That is why the wiki lists effects the dagger's component
-list appears not to carry. The dagger's `Action_SacrificeFriend` kills whoever it is *fed to*,
-never the holder; it carries no `Action_Consume`, so the only path to `RunAction` is the feed
-behaviour calling `ConsumeDelayed` once the item has changed hands. Check for new implementors
-after a game update.
+spared), healed and handed stamina. The dagger's `Action_SacrificeFriend` kills whoever it is
+*fed to*, never the holder; it carries no `Action_Consume`, so the only path to `RunAction` is
+the feed behaviour calling `ConsumeDelayed` once the item has changed hands. Check for new
+implementors after a game update.
 
 **`Action_ApplyAffliction` carries a main affliction and `extraAfflictions`.** Only the Cursed
 Skull fills the extras. `Action_SuperJumpAmulet` derives from it and its `RunAction` calls
@@ -511,7 +473,7 @@ item, so the shield never lapses.
 **The Cactus charges its thorns to whoever it is stuck to - which includes its holder.**
 `CharacterData.currentItem`'s setter makes the item in your hand your `currentStickyItem`, so
 `UpdateWeight` charges `addThornsToStuckPlayer` while you hold it, not only after someone throws
-it at you. `addWeightToStuckPlayer` rides the same path; no item is known to set it.
+it at you. `addWeightToStuckPlayer` rides the same path; no item sets it.
 
 **Constructable** builds `constructedPrefab`; its subclasses `ScoutEffigy` and
 `CheckpointConstructable` build nothing with a `Campfire`.
@@ -534,14 +496,6 @@ like it not arriving.
 `Balloon`/`TiedBalloon`/`CharacterBalloons` (-18% / -54% gravity for two minutes), `Glider`,
 `JetpackItem`/`Peak.Jetpack`, `Backpack` slot counts. `Action_Balloon` and `Action_Parasol` are
 the *use* halves.
-
-**Dead or beta code, not to be resurrected**: `HealingAmulet`'s `IItemPocketBehavior` (Tenacity
-works instantly); `DoubleJumpAmulet` and `InfiniteStamAmulet`, which are on no item - the four
-live amulets are Ambition, Tenacity, Initiative and the duplication amulet, all described
-through an `Action_*`; Mushroom Glow's `Affliction_Glowing`, not in the live game;
-`ClimbingChalk`'s affliction and `Affliction_Exhausted` / `AdjustStatusOverTime`, read by
-nothing; `ZombieBite`, `PreventPoisonHealing`, `NoHunger`, which come from mobs and campfires,
-never an item; Crab, above.
 
 ---
 
@@ -566,11 +520,10 @@ borrows). Both are white silhouettes tinted by their Image, so the tint is the H
 whole shape in its alpha channel, authored for a display far larger than a line of text, and
 nearly as many of its pixels are part-transparent as are solid. A copy of the game's own
 texture at 1:1, uncropped and unscaled, is exactly as soft as the packed one; atlas resolution
-changes nothing. The clue that should have been read first: the text is crisp and the icon
-beside it is soft, on the same line at the same size, which rules out render scale, display
-resolution and canvas scale together. The textures run to about 500 a side and the sprite
-rects inside them are neither square nor whole-numbered - Crab is 295x468, Curse is
-435.85x494.85 at a fractional offset.
+changes nothing. The tell: the text is crisp and the icon beside it is soft, on the same line
+at the same size, which rules out render scale, display resolution and canvas scale together.
+The textures run to about 500 a side and the sprite rects inside them are neither square nor
+whole-numbered - Crab is 295x468, Curse is 435.85x494.85 at a fractional offset.
 
 **Numbness is not a `STATUSTYPE`** and has no bar, so there is nothing to scrape; it is the
 one icon the mod ships (`assets/numbness.png`, provenance in `assets/NOTICE.md`).
@@ -608,13 +561,6 @@ game is read from the game; these are the remainder.
 | Colours for Numb, Item, Float | `EffectColors.Colors` | no bar to sample; Numb is taken from the icon's pale stems |
 | Cap centre `0.31` em | `StatusIcons.CapCentre` | dialled in against the game; the font's own metrics put it slightly high |
 
-Retired from this list, and worth knowing they were reachable: the metre conversion (now
-`CharacterStats.unitsToMeters`), the rope length (now joint geometry), the three invented
-divisors on the Chain Launcher, Magic Bean and rope ranges, the `2.5` weight multiplier, the
-`0.05` per thorn, the flat `0.9` blast factor, the status step and the cooking maximum (now
-read through `GameValues`), and the whole status palette (now sampled from the bars, with the
-table as a fallback).
-
 ---
 
 ## Item index
@@ -631,7 +577,6 @@ Where each item appears above.
 - **Cactus** - Status arithmetic (thorn increments); Actions and hooks (sticky while held).
 - **Candle** - StatusField.
 - **Chain Launcher** - Units and distances.
-- **Chaos berry** - Clearing all status.
 - **Coconut** - Actions and hooks (Breakable items).
 - **Cooked Bird** - Cooking (preCooked).
 - **Cure-All** - Clearing all status (not one; -5 thorns).
@@ -651,12 +596,12 @@ Where each item appears above.
 - **Pandora's Lunchbox** - Clearing all status (not one).
 - **Portable Stovetop** - Blasts (measurement, three emitters, cooking explosion).
 - **Prickleberry** - Status arithmetic (thorns).
-- **Remedy Fungus** - Reading a value (hierarchies move, includeInactive); Status arithmetic (accumulator, 14 payouts); Blasts (measurement, field); Actions and hooks (thrown only).
-- **Ritual Dagger** - Reading a value (field initialiser); Actions and hooks (feed hook, SacrificeFriend).
+- **Remedy Fungus** - Reading a value (includeInactive); Status arithmetic (accumulator, 14 payouts); Blasts (measurement, field); Actions and hooks (thrown only).
+- **Ritual Dagger** - Reading a value (field initialiser); Clearing all status; Actions and hooks (feed hook, SacrificeFriend).
 - **Rope Cannon / Rope Spool** - Units and distances.
 - **Scorpion** - Status arithmetic (statusSum formula).
 - **Scout Cookies** - Cooking (ladder on a non-consumable).
-- **Scout's Ambition / Tenacity / Initiative** - Reading a value (Tenacity dead code); Cooking (cooked amulet); Actions and hooks (SuperJumpAmulet, MassSuperJump).
+- **Scout's Ambition / Tenacity / Initiative** - Reading a value (Tenacity's dead pocket behaviour); Cooking (cooked amulet); Actions and hooks (SuperJumpAmulet, MassSuperJump).
 - **Shroomberry** - Reading a value (whole method); Cooking (AdjustStatusInstantly); Actions and hooks (generation, 0-15).
 - **Snowball** - Blasts (fires twice); Actions and hooks (Breakable non-item).
 - **Sports Drink** - Cooking (EnableScripts).

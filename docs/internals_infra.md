@@ -22,9 +22,8 @@ The hooks: `GUIManager.Start` creates the overlay; `CharacterItems.Update` is th
 the overlay dirty when they concern the observed character.
 
 **Rebuilt on events, not sampled.** Nothing the overlay prints changes while you hold the item:
-every figure comes from a field on a component or a prefab. The two figures once called live
-never were - the Scorpion's range is a literal and the rope-spool remainder was dropped. Two
-things still need catching that no game event reports:
+every figure comes from a field on a component or a prefab. Two things still need catching
+that no game event reports:
 
 - *Somebody else swapping what they hold while you watch them.* Their `Equip` does reach us,
   but nothing else about them does. The `sinceItemAttach` comparison in `Tick` reads as a
@@ -52,40 +51,34 @@ GameObject (it is parented to the game's canvas and would outlive the assembly),
 or new Unity objects need their cleanup added there.
 
 **Performance.** The overlay runs off `CharacterItems.Update`, so anything it touches runs
-every frame, and this has caused a visible FPS drop once: a failing icon build retried a
-`FindObjectsByType` scene scan every frame. Never retry a failed expensive operation on the
-next frame - `StatusIcons.EnsureBuilt` spaces and caps its retries, `Overlay.EnsureCreated`
-throttles to once a second. `ForceMeshUpdate` and text measurement run only when the text or
-style changes, `SetText` early-returns on unchanged text, the handler lookup caches its
-misses, and debug logging is gated behind one config check.
+every frame. Never retry a failed expensive operation on the next frame -
+`StatusIcons.EnsureBuilt` spaces and caps its retries, `Overlay.EnsureCreated` throttles to
+once a second. `ForceMeshUpdate` and text measurement run only when the text or style changes,
+`SetText` early-returns on unchanged text, the handler lookup caches its misses, and debug
+logging is gated behind one config check.
 
 ---
 
 ## Building a description
 
 **`Build` walks every component on the item** and skips three kinds: a null entry (a missing
-script serializes as one, and Stone ships one - reading its type threw and blanked the whole
-overlay), a disabled `Behaviour` (cooking switches actions off rather than removing them), and
-an `ItemAction` flagged `OnConsumed` on an item nobody can eat (cooking adds such actions to
-anything). One test each, here, rather than in whichever handlers happened to need it.
+script serializes as one, and Stone ships one), a disabled `Behaviour` (cooking switches
+actions off rather than removing them), and an `ItemAction` flagged `OnConsumed` on an item
+nobody can eat (cooking adds such actions to anything). One test each, here, rather than in
+whichever handlers happen to need it.
 
 **Components are dispatched by a type lookup that walks to the base**, never by a chain of
 tests. `ItemDescriptionBuilder.Handlers` maps a component type to the method that describes
 it; `HandlerFor` tries the component's own type, then its base, and so on, caching the answer
 including misses. The most derived entry wins, source order means nothing, and a subclass with
-no entry inherits its base's description.
-
-It used to be thirty-one branches of `GetType() == typeof(T)`. That test is exact, so a
-subclass matched nothing and was described by nobody - silently, with no error and no log line,
-just a shorter overlay. It cost real data twice (`Action_SuperJumpAmulet` under
-`Action_ApplyAffliction`, `CactusBall` under `StickyItemComponent`), and `ScoutEffigy` under
-`Constructable` was still live when it was replaced. Swapping the tests for `is` would have
-been worse: a Scout's Ambition is both an `Action_SuperJumpAmulet` and an
-`Action_ApplyAffliction`, so correctness would have depended on which branch sat higher in
-the file. Adding an item is one entry in `Handlers` plus one method. `ItemCooking` is
-deliberately absent from the table: the cooking hint is decided in `Build` after every handler
-has run, from the first `ItemCooking` only. `EffectFormatter.AfflictionHandlers` is the same
-shape for afflictions, for the same reason.
+no entry inherits its base's description. A chain of `GetType() == typeof(T)` tests would
+lose every subclass silently (`Action_SuperJumpAmulet` under `Action_ApplyAffliction`,
+`CactusBall` under `StickyItemComponent`, `ScoutEffigy` under `Constructable`); a chain of
+`is` tests would make correctness depend on which branch sat higher in the file, since a
+Scout's Ambition is both an `Action_SuperJumpAmulet` and an `Action_ApplyAffliction`. Adding
+an item is one entry in `Handlers` plus one method. `ItemCooking` is deliberately absent from
+the table: the cooking hint is decided in `Build` after every handler has run, from the first
+`ItemCooking` only. `EffectFormatter.AfflictionHandlers` is the same shape for afflictions.
 
 **A handler says what it means, never where its line goes.** Every handler receives a `Parts`:
 the layout, the effect-line list, the item, whether it is consumable, and the index of the
@@ -98,8 +91,8 @@ have run. `Collect` drops anything empty so the branches stay free of guards.
 **`EffectOrder`** applies, in turn: petrify last whatever else is true; onset; status by the
 curated rank in `EffectOrder.Order` (names taken from `STATUSTYPE` so a renamed member breaks
 the build rather than sorting last); source component index; and finally the line's original
-position, because one component can add several lines and `List.Sort` is unstable - Dynamite's
-held-injury and blast lines are identical on every other key. Before sorting,
+position, because one component can add several lines and `List.Sort` is unstable -
+Dynamite's held-injury and blast lines are identical on every other key. Before sorting,
 `DropRedundantClears` removes a clear-all line for any status something else already removes
 at the same onset. The reasons for each key are in [design.md](design.md).
 
@@ -136,12 +129,11 @@ compiled value as the fallback, rejects a non-positive reading, and warns once b
 had to fall back.
 
 **Never throw on the build path.** This is a read-only overlay, and an exception in `Build`
-blanks it. `EffectColors.Get` returns the neutral colour for an unknown key (a missing key once
-took a `KeyNotFoundException` through the whole build), `StatusIcons.Tag` degrades to text,
-`GameValues` falls back, prefab walks are guarded at every hop, and the database dump wraps
-each item so one throwing prefab costs one entry. A number that is one patch stale still
-describes the item; no overlay describes nothing. What must not happen is a *silent* fallback,
-which is why the ones that can log do so once.
+blanks it. `EffectColors.Get` returns the neutral colour for an unknown key,
+`StatusIcons.Tag` degrades to text, `GameValues` falls back, prefab walks are guarded at every
+hop, and the database dump wraps each item so one throwing prefab costs one entry. A number
+that is one patch stale still describes the item; no overlay describes nothing. What must not
+happen is a *silent* fallback, which is why the ones that can log do so once.
 
 **`Blast`** is the arithmetic for what an AOE delivers to the person who set it off: the
 point-blank factor from the AOE's own `range`, `factorPow`, `minFactor` and `ignoreFactor`,
@@ -152,7 +144,6 @@ which is whole points rather than a fraction.
 **`CookingHint`** answers "should this go on the fire again?" from the *next* stage: canBeCooked
 and the cooking maximum, wreck-on-cook, then the behaviours judged by kind (skipping any not
 yet reached or already spent), then `ignoreDefaultCookBehavior`, then the stat ladder.
-The item's cooking, not the item, is the input.
 
 ---
 
@@ -160,27 +151,24 @@ The item's cooking, not the item, is the input.
 
 **Every visible thing sits inside a colour tag** - text and sprites both, because a `tint=1`
 sprite multiplies by the surrounding colour, so an untagged icon is as wrong as an untagged
-number. Two lines leaked for as long as they existed (the item-duplication arrow and the
-low-gravity balloon) and it was not catchable by eye: TextMeshPro renders an untagged run pure
-white, which reads as "bright" rather than "wrong". Two things guard it now. `Overlay` sets
-`textMesh.color` to `EffectColors.Base`, the HUD's cream, so a missed tag degrades instead of
-shouting - a safety net, not a licence. And `ItemDebug.LogUntagged` parses the finished string
-every time it changes and warns `[color]` with the offending run, so a leak is a log line
-rather than a thing somebody has to notice.
+number. A leak is not catchable by eye: TextMeshPro renders an untagged run pure white, which
+reads as "bright" rather than "wrong". Two things guard it. `Overlay` sets `textMesh.color` to
+`EffectColors.Base`, the HUD's cream, so a missed tag degrades instead of shouting - a safety
+net, not a licence. And `ItemDebug.LogUntagged` parses the finished string every time it
+changes and warns `[color]` with the offending run, so a leak is a log line rather than a
+thing somebody has to notice.
 
-**The palette is read off the game, and the table is the fallback.** `EffectColors.Colors`
-used to be the whole answer - a sampling somebody took once and pasted in, which a repaint
-would have left saying the old thing forever. `StatusIcons` already walks every
-`BarAffliction` to scrape icons, so `EffectColors.Sample` rides along on that walk and costs
-nothing; `Get` prefers a sampled colour. The table stays because a description built before
-the HUD exists still needs an answer.
+**The palette is read off the game, and the table is the fallback.** `StatusIcons` already
+walks every `BarAffliction` to scrape icons, so `EffectColors.Sample` rides along on that walk
+and costs nothing; `Get` prefers a sampled colour. The table `EffectColors.Colors` stays
+because a description built before the HUD exists still needs an answer, and because a
+repaint should move the overlay rather than leave a pasted sampling saying the old thing.
 
-- **The bright fill is picked as the pair of Images that agree**, not by sprite name (which
-  would be one more name-keyed lookup to go quiet after a UI reshuffle) and not by brightness
-  (Curse's backing outshines its fill, and brightest-wins read `#635660` for `#1B0043`). The
-  bar's own icon is skipped: it is a white silhouette tinted by its Image and would pair with
-  anything. Finding no pair samples nothing, leaving the table in place - a wrong colour is
-  worse than an old one.
+- **The bright fill is picked as the pair of Images that agree**, not by sprite name (a
+  name-keyed lookup goes quiet after a UI reshuffle) and not by brightness (Curse's backing
+  outshines its fill). The bar's own icon is skipped: it is a white silhouette tinted by its
+  Image and would pair with anything. Finding no pair samples nothing, leaving the table in
+  place - a wrong colour is worse than an old one.
 - **`Sample` refuses pure white and pure black.** An untinted Image means the artwork carries
   its own colour and nothing was chosen; taking it would turn the shield marker from gold into
   the default. A black Image is a backing. Only *pure* white is refused: Web is `#E6E6E7`, a
@@ -227,15 +215,16 @@ is registered as `ExtraStamina`, because a space breaks the rich-text tag.
    cropped to the sprite's own rect and shrunk to `IconPixelHeight` (128) pixels tall, both
    riding on the blit the readback already needed. **Height, not the long side**: the sources
    are nothing like square, and every glyph is pinned to a height of `IconScale` em with its
-   width following its own aspect, so capping the long side gave a wide icon fewer vertical
-   pixels than a tall one. It shrinks in halving steps: one bilinear tap reads four texels, so
-   a 4x reduction in a single blit would alias every thin line in a silhouette. It never
-   upscales. 128 covers the whole font-size range with room to spare; the atlas lands at
-   1024x512. Packing at the stored size cost a 4096x4096 atlas - 64 MB for twenty-five glyphs.
+   width following its own aspect, so capping the long side would give a wide icon fewer
+   vertical pixels than a tall one. It shrinks in halving steps: one bilinear tap reads four
+   texels, so a 4x reduction in a single blit would alias every thin line in a silhouette. It
+   never upscales. 128 covers the whole font-size range with room to spare; the atlas lands at
+   1024x512. Packing at the stored size would cost a 4096x4096 atlas - 64 MB for twenty-five
+   glyphs.
 2. `ShouldTint` samples the copy on a coarse grid and decides whether the icon is a flat
    silhouette (tint it) or artwork with its own colours (do not). Decided by looking at the
    texture, never by a list of names, which would rot the first time the game recoloured an
-   icon. Tinting a mushroom by its own pale stem colour turned the whole icon muddy.
+   icon.
 3. `Sharpen` steepens the alpha ramp around its midpoint, driven by `Icon Sharpness`. It runs
    *after* the downscale because the downscale softens the edge again. Applied to every icon:
    a feathered boundary is an artefact of the authoring size whatever is inside it. The
@@ -271,31 +260,22 @@ can destroy them underneath it. A HUD rebuild (dying, a new run) creates a **new
 `TextMeshProUGUI` with no sprite asset assigned, so `EnsureIcons` re-assigns it rather than
 checking whether icons exist, and marks the text dirty because a string built before the atlas
 contains `HUNGER` rather than a sprite tag. `Reset` also clears the aspect list, which is
-indexed in step with the glyphs - leaving it behind made every glyph on the next build take
-its width from the previous build's entry at the same index, which survived only while every
-rebuild packed the same icons in the same order.
+indexed in step with the glyphs.
 
-**Traps already hit.** Each icon is on its own texture, and one sprite asset per texture
-chained as fallbacks does not resolve - TMP renders `?` - so everything goes into one atlas. A
-dynamic atlas size derived from the live font size and canvas scale, repacking whenever either
-moved, was written and removed: it existed to chase a sharpness problem that turned out to be
-the artwork, so it was buying a smaller atlas at the price of a scene scan hanging off a config
-slider. Two diagnostics settled that investigation and are worth rebuilding the same way if
-icons ever look wrong again: one wrote the packed atlas to a PNG beside the log with
-`Texture2D.EncodeToPNG`, and one wrote a single icon's source texture out whole. Looking at the
-two side by side settled in one minute what three rounds of reasoning about sampling ratios
-could not.
+**One atlas, not one asset per icon.** Each icon is on its own texture, and one sprite asset
+per texture chained as fallbacks does not resolve - TMP renders `?`. If icons ever look wrong
+again, two throwaway diagnostics settle it fastest: write the packed atlas to a PNG beside the
+log with `Texture2D.EncodeToPNG`, and write a single icon's source texture out whole, then
+compare them side by side.
 
 ---
 
 ## Overlay placement
 
 The overlay is a `TextMeshProUGUI` parented to `GUIManager.hudCanvas`, found through
-`GUIManager.instance` - both public fields, so a rename breaks the build. It used to be
-`GameObject.Find("GAME/GUIManager")` and a `Canvas_HUD` child, either of which would have gone
-quiet the day the game moved an object. The font is the HUD's own; `raycastTarget` is off so
-it never intercepts clicks; overflow is allowed so a long description spills rather than
-clips.
+`GUIManager.instance` - both public fields, so a rename breaks the build. The font is the
+HUD's own; `raycastTarget` is off so it never intercepts clicks; overflow is allowed so a long
+description spills rather than clips.
 
 **Each frame it measures the inventory slot holding the current item and centres itself above
 it.** Anchors are the HUD's bottom-left so `anchoredPosition` is a plain HUD-space
@@ -306,8 +286,8 @@ the result is clamped on screen so a misplaced overlay never becomes an invisibl
 is sized to the measured text height, which is what makes `Offset Y` a true bottom edge;
 measuring only happens when text or style changes.
 
-Four approaches failed and should not be retried: parenting into `ItemPromptLayout` hands
-position to the game's layout group, leaving box width as the only way to move sideways;
+Four other placements do not work: parenting into `ItemPromptLayout` hands position to the
+game's layout group, leaving box width as the only way to move sideways;
 `LayoutElement.ignoreLayout` to escape that stops the overlay rendering entirely; offsets from
 a screen corner drift because the HUD reflows with aspect ratio; and `ItemPromptLayout` spans
 the full canvas height, so its corners are the screen edges.
@@ -321,19 +301,17 @@ Unity-null; it retries at most once a second because `Create` is a scene lookup.
 
 `ConfigurationManagerAttributes` is read by BepInEx ConfigurationManager through reflection -
 it matches the class by name, so only the fields used are declared. `Order` runs downward
-within each section so the F1 menu shows settings in binding order (without it the menu sorts
-alphabetically, which put Show Cooking Hint above Show Custom). `IsAdvanced` hides a setting
-behind the menu's advanced toggle.
+within each section so the F1 menu shows settings in binding order rather than alphabetically.
+`IsAdvanced` hides a setting behind the menu's advanced toggle.
 
 **Every numeric setting declares a range.** Without one, ConfigurationManager renders a text
-box that only commits on Enter, which reads as "changing the value does nothing" - and an
-empty text box once committed `Font Size = 0`, which made the overlay invisible and cost a
-debugging session. The `Bind` helpers enforce it.
+box that only commits on Enter, which reads as "changing the value does nothing", and an empty
+text box commits `Font Size = 0`, which makes the overlay invisible. The `Bind` helpers
+enforce it.
 
 **No apostrophe, quote, bracket, backslash or `=` in a config key.** BepInEx throws from
 `Bind`, and `Bind` runs in `Awake`, so the whole plugin fails to load: nothing patched, nothing
-in F1, one `ArgumentException` in the console. "Don't Distinguish Poisonous Mushrooms" cost a
-relaunch; it is spelled "Do Not".
+in F1, one `ArgumentException` in the console. It is "Do Not", not "Don't".
 
 **Renaming a config key or moving it to another section resets it.** BepInEx reads the `.cfg`
 by section and key, so the old value becomes an orphaned line and the entry comes back at its
@@ -365,25 +343,23 @@ apply.
 The rules behind them:
 
 - **Log state when it changes, never once per refresh.** `Refresh` runs on every equip and on
-  the periodic re-check, so anything logged unconditionally arrives about once a second. Four
-  diagnostics doing that once filled 172 of a 225-line log with repeats.
+  the periodic re-check, so anything logged unconditionally arrives about once a second and
+  buries the lines that report an actual event.
 - **A log line nobody will read is not a safety net.** Warning on an unrecognised affliction
-  type or a component with no handler was proposed and rejected: nobody opens the log unless
-  they are already debugging, so it would make a gap feel covered without anybody learning of
-  it. Diagnostics are for an investigation somebody is running now. A field that drives a
-  description belongs in `[item]`, not in a warning.
-- **A diagnostic that has done its job is deleted.** The colour scrape became the permanent
-  sampling; the rope-name, position, icon-state and clear-all logs and the rope-joint and
-  bean-mesh probes were removed once their questions were answered. Git history has them.
+  type or a component with no handler would make a gap feel covered without anybody learning
+  of it, because nobody opens the log unless they are already debugging. Diagnostics are for
+  an investigation somebody is running now. A field that drives a description belongs in
+  `[item]`, not in a warning.
+- **A diagnostic that has done its job is deleted.** Git history has it if the question
+  comes back.
 - **The dump is the regression check.** After any display change, diff two dumps. It also
   writes the showcase, which is copied to `docs/showcase.html` by hand and committed with the
   change. It runs on database prefabs rather than live items, which is also the proof that
   `Build` works on a prefab at all; `RopeSpool.RopeFuel` needs a live instance and is printed
   as `<prefab>` there.
-- Duplicated components with different values are the hardest bug to see from a type list -
-  two `Action_GiveExtraStamina` on one item look identical - which is why `[item]` prints the
-  value each one carries. Listing *every* component in a prefab walk is the point: a first
-  version printed only three types and hid the very `StatusField` it was written to find.
+- `[item]` prints the value each component carries because two `Action_GiveExtraStamina` on
+  one item look identical in a type list, and lists *every* component in a prefab walk because
+  a filtered list hides exactly the component you did not think to filter for.
 
 Inspecting the game outside the mod: `tools/Dump-GameTypes.ps1` lists types and members from
 the game assembly (`-TypePattern` is the fastest way to find a candidate when the name is
@@ -397,8 +373,7 @@ unknown), and `ilspycmd -t <TypeName>` decompiles a single type, which is the wo
 overlay as it draws in game with the item's wiki picture and name under it, variants with
 identical text collapsed into one card with a count. **Generated from `Build` itself, so it can
 never disagree with the code** - and equally it is not a specification and cannot catch a bug
-on its own. It replaced a Python generator that re-derived the display rules from wiki numbers
-and drifted from the code within a week.
+on its own.
 
 - **No artwork in the repository.** Every icon is hotlinked from peak.wiki.gg, whose file names
   are the display name with underscores. Statuses live under `Status_*`, with two names that
@@ -409,13 +384,12 @@ and drifted from the code within a week.
   SVG filter (`feFlood` clipped to `SourceAlpha`), one per colour used; filters never read
   pixels back and are allowed on any image. Whether a sprite is tinted follows the `tint=`
   attribute the mod itself wrote.
-- **No script.** A filter box was tried; `.card{display:flex}` overrode the `hidden`
-  attribute and no JavaScript was preferred over fixing it.
+- **No script.** The page is static HTML and CSS.
 - **Display names.** `Item.GetName()` has the right words in the HUD's upper case;
-  `UIData.itemName` is worse (a raw key for some items). The page title-cases `GetName`, keeps
-  the wiki's small words lower (`Bugle of Friendship`), straightens the typographic
-  apostrophes, and aliases the two real items the wiki files elsewhere (`Half-Coconut`,
-  `Cooked Bird`). Props and unlocalised leftovers have no page; their image hides itself.
+  `UIData.itemName` is a raw key for some items. The page title-cases `GetName`, keeps the
+  wiki's small words lower (`Bugle of Friendship`), straightens the typographic apostrophes,
+  and aliases the two real items the wiki files elsewhere (`Half-Coconut`, `Cooked Bird`).
+  Props and unlocalised leftovers have no page; their image hides itself.
 - A sprite key with no wiki file is shown as its name, so a gap in the table is visible.
 
 Regenerating it: Debug Logging on, hold an item, copy `BepInEx/VeeItemInfo-showcase.html` over
