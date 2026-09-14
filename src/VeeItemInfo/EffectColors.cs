@@ -45,22 +45,14 @@ internal static class EffectColors
     /// <summary>
     /// Status colours, matching the game's own bars.
     ///
-    /// Every status with a bar is now **sampled from that bar** rather than guessed. Each
-    /// BarAffliction carries three Images - a dark backing on
-    /// `procedural_ui_image_default_sprite`, and the bright fill on `DitherStripes` and
-    /// `UI_Blur_Outlne_Thick`, which always agree. The bright pair is the status colour.
+    /// Every status with a bar is **sampled from that bar** on each atlas build - see
+    /// <see cref="Sampled"/> - and this table is the fallback for a description built before
+    /// the HUD exists. It was checked against the bars once by hand: eleven matched exactly,
+    /// Petrify was missing outright, and Spores had been taken off the icon instead of the
+    /// bar and was a point out in every channel.
     ///
-    /// The scrape that read them was a throwaway: it printed every bar's three Images once a
-    /// second, which is how this table was checked, and it was deleted once the table matched.
-    /// Bring it back the same way if a game update moves the palette - a loop over
-    /// `FindObjectsByType&lt;BarAffliction&gt;` reading `GetComponentsInChildren&lt;Image&gt;`.
-    ///
-    /// Eleven of them already matched exactly, which says the hand-picking was careful.
-    /// Petrify was missing outright; Spores had been taken off the icon instead of the bar
-    /// and was a point out in every channel.
-    ///
-    /// The keys the mod invents - Extra Stamina, Shield, Numb, Cook, Item, Float - have no
-    /// bar to scrape and stay hand-picked.
+    /// The keys the mod invents - Numb, Item, Float - have no bar to sample and stay
+    /// hand-picked. Shield, Cook and Extra Stamina turned out to have one after all.
     /// </summary>
     private static readonly Dictionary<string, string> Colors = new()
     {

@@ -818,14 +818,8 @@ internal static class StatusIcons
                 }
             }
 
-            // Named rather than counted, because the point of reading the palette off the
-            // game is that a difference means something: a long list says the sampling has
-            // latched onto the wrong Image, a short one says the game moved a colour and the
-            // overlay followed it.
-
-            // What each icon was *before* the copy shrank it. Packing smaller can only cost
-            // sharpness where there was sharpness to lose, so an icon whose source is already
-            // at or under MaxIconPixels looks the way it looks because of its artwork, and no
+            // What each icon was *before* the copy shrank it. An icon whose source is already
+            // at or under IconPixelHeight looks the way it looks because of its artwork, and no
             // amount of repacking will help it.
             SortedDictionary<string, List<string>> sources = new();
             for (int i = 0; i < icons.Count; i++)

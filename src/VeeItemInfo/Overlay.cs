@@ -232,12 +232,7 @@ internal static class Overlay
             StatusIcons.Invalidate();
         }
 
-        // Icons are packed at the size they are drawn, and that size follows Font Size and
-        // the canvas scale - so a settings change or a resolution change makes the current
-        // atlas the wrong resolution rather than merely stale. Comparing the target against
-        // what was built catches both without either needing an event of its own; the target
-        // is quantised to a power of two, so it holds still across a slider drag instead of
-        // repacking on every frame of it.
+        // Sharpness is baked into the atlas, so moving that slider has to repack it.
         if (StatusIcons.Available && !StatusIcons.MatchesSettings)
         {
             StatusIcons.Invalidate();
@@ -255,8 +250,7 @@ internal static class Overlay
             // HUNGER rather than a sprite tag - and assigning a sprite asset cannot go back
             // and change a string that has already been built. Until this existed, the only
             // thing that repaired it was the periodic re-check happening to come round.
-            ItemInfoController.MarkDirty();
-            // Icons change the line metrics, so the cached height is now stale.
+            // Icons also change the line metrics, so the cached height is stale too.
             lastText = "";
             ItemInfoController.MarkDirty();
         }

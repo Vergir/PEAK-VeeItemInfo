@@ -16,14 +16,12 @@ namespace VeeItemInfo;
 /// for facts that are not status changes, Effects for every status change whether it lands
 /// on you or on everyone nearby, Cooking for the campfire hint, Weight last.
 ///
-/// The goal is a display that needs no translation, and as of the v1 pass that is nearly
-/// true: numbers, signs and the game's own icons, with no English left in the common paths.
-/// Where a fact has no symbol yet it is omitted rather than described in words.
+/// The display needs no translation: numbers, signs and the game's own icons, with no
+/// English on any rendered line. Where a fact has no symbol it is omitted rather than
+/// described in words.
 ///
-/// Note the component chain matches with GetType() == typeof(T), which is exact - a
-/// subclass will not match. That is the most likely reason for an item silently losing its
-/// description after a game update. Amulets are the exception and use 'is', because they
-/// all derive from AmuletBase.
+/// Components are dispatched through <see cref="Handlers"/>, a type lookup that walks to the
+/// base class - see there for why it is neither a chain of exact type tests nor of 'is'.
 /// </summary>
 internal static class ItemDescriptionBuilder
 {
@@ -370,23 +368,6 @@ internal static class ItemDescriptionBuilder
     }
 
     /// <summary>
-    /// A Shroomberry: what this berry is worth in stamina, and four question marks for the
-    /// effect, coloured by whether this run rolled a good one or a bad one for it.
-    ///
-    /// A berry colour's valence <i>is</i> stable across runs, even though the effects
-    /// themselves are shuffled every time. GenerateEffectList deals the slots in order and
-    /// spends its quotas first: the first minGoodEffects slots are drawn from GoodEffects and
-    /// the next minBadEffects from BadEffects, only then falling back to a free choice. So a
-    /// berry whose mushroomTypeIndex sits in the guaranteed-good range is always good, one in
-    /// the guaranteed-bad range is always bad, and one past both quotas is a genuine coin
-    /// flip. That is exactly the red/yellow-good, green/blue-bad, purple-either pattern
-    /// players report.
-    ///
-    /// Reading it live gets that right without hardcoding a colour per berry, and keeps
-    /// working if the quotas ever change. Falls back to neutral when MushroomManager is not
-    /// up yet, which is honest: unknown rather than guessed.
-    /// </summary>
-    /// <summary>
     /// The most stamina a Shroomberry can carry, as a 0-1 fraction: 15 display units.
     ///
     /// **Hardcoded, and it cannot be otherwise.** MushroomManager.GenerateEffectList deals
@@ -404,6 +385,23 @@ internal static class ItemDescriptionBuilder
     private const float MushroomStaminaPerRoll = 0.05f;
     private const float MaxMushroomStamina = 3 * MushroomStaminaPerRoll;
 
+    /// <summary>
+    /// A Shroomberry: what this berry is worth in stamina, and four question marks for the
+    /// effect, coloured by whether this run rolled a good one or a bad one for it.
+    ///
+    /// A berry colour's valence <i>is</i> stable across runs, even though the effects
+    /// themselves are shuffled every time. GenerateEffectList deals the slots in order and
+    /// spends its quotas first: the first minGoodEffects slots are drawn from GoodEffects and
+    /// the next minBadEffects from BadEffects, only then falling back to a free choice. So a
+    /// berry whose mushroomTypeIndex sits in the guaranteed-good range is always good, one in
+    /// the guaranteed-bad range is always bad, and one past both quotas is a genuine coin
+    /// flip. That is exactly the red/yellow-good, green/blue-bad, purple-either pattern
+    /// players report.
+    ///
+    /// Reading it live gets that right without hardcoding a colour per berry, and keeps
+    /// working if the quotas ever change. Falls back to neutral when MushroomManager is not
+    /// up yet, which is honest: unknown rather than guessed.
+    /// </summary>
     private static List<EffectLine> DescribeMushroom(Action_RandomMushroomEffect effect)
     {
         const string Marks = "????";
@@ -1112,10 +1110,8 @@ internal static class ItemDescriptionBuilder
             + EffectColors.Neutral + " / " + EffectFormatter.Seconds(effect.totalPoisonTime) + "</color>",
             Onset.OverTime, "Poison", 1f);
     }
-    // 'is' rather than an exact match: CactusBall derives from StickyItemComponent
-    // and is the only item carrying one in 2.1.a, so an exact check would read the
-    // base class and describe nothing at all. Same trap that lost
-    // Action_SuperJumpAmulet's affliction.
+    // Reached by the Cactus's CactusBall through the base walk in HandlerFor - the only
+    // StickyItemComponent on any item.
     private static void DescribeStickyItemComponent(Component component, Parts parts)
     {
         StickyItemComponent sticky = (StickyItemComponent)component;
@@ -1208,16 +1204,12 @@ internal static class ItemDescriptionBuilder
             + " " + StatusIcons.Tag("Petrify") + "</color>",
             Onset.Instant, "Petrify", 1f);
     }
-    // Amulets are matched with 'is' rather than an exact type check: they all derive
-    // from AmuletBase and each applies petrify through a different path.
     private static void DescribeSuperJumpAmulet(Component component, Parts parts)
     {
         Peak.Action_SuperJumpAmulet superJump = (Peak.Action_SuperJumpAmulet)component;
-        // Action_SuperJumpAmulet derives from Action_ApplyAffliction and its
-        // RunAction calls base.RunAction() before charging petrify, so it carries a
-        // real affliction as well as a cost. The Action_ApplyAffliction branch above
-        // matches on exact type and so never sees a subclass - this is the only
-        // place that affliction is read.
+        // Derives from Action_ApplyAffliction and its RunAction calls base.RunAction() before
+        // charging petrify, so it carries a real affliction as well as a cost. This entry wins
+        // over the base one in Handlers, so the affliction has to be read here too.
         CollectAfflictions(parts, superJump.affliction, superJump.extraAfflictions);
         // AddStatus takes a 0-1 fraction like every other status, but petrify is
         // floored to whole points on the way in - this read +7.5 where the game gives
@@ -1272,7 +1264,6 @@ internal static class ItemDescriptionBuilder
         return (anchor + rope.spacing) * scale;
     }
 
-    /// <summary>A distance in metres, in the neutral colour. No unit space: "12.5m".</summary>
     /// <summary>A distance held in Unity units, in the neutral colour.</summary>
     private static string ReachInUnits(float unityUnits) =>
         EffectColors.Neutral + EffectFormatter.PeakMetres(unityUnits) + "</color>";
@@ -1540,9 +1531,9 @@ internal static class ItemDescriptionBuilder
     /// seconds.
     ///
     /// This also makes the blast's distance factor irrelevant here: anything between 0.0125
-    /// and 0.025 a tick lands on the same one step per second, so the empirical 0.9 in
-    /// <see cref="Blast.Delivered"/>'s point-blank factor is not needed for the ticking half
-    /// and is not applied to it.
+    /// and 0.025 a tick lands on the same one step per second, so the point-blank distance
+    /// <see cref="Blast.Delivered"/> applies to a one-off blast is not needed for the ticking
+    /// half and is not applied to it.
     /// </summary>
     private static float TickedTotal(float amount, float period, float seconds)
     {
