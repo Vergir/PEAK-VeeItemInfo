@@ -5,24 +5,15 @@ namespace VeeItemInfo;
 
 /// <summary>
 /// Which section of the overlay a line belongs to. Four, in reading order: what the item is,
-/// what it does, what cooking does to it, what it costs to carry.
-///
-/// This replaced a five-block model (Note, Status, Others, State, Weight). State only ever
-/// held the uses label, which was dropped; Status and Others merged because across all 130
-/// items in 2.1.a only one had content in both, and there the self-facing part was really a
-/// Custom note rather than a number. Every section can be hidden independently from config.
+/// what it does, what cooking does to it, what it costs to carry. Each can be hidden from
+/// config. What goes where is in docs/design.md, "Four sections".
 /// </summary>
 internal enum Block
 {
     /// <summary>
-    /// Item-specific facts that are not the result of using the item: how far a rope
-    /// reaches, how many pieces something breaks into, how long an effect lasts, or a bare
-    /// "???" where the item does something we deliberately do not spell out.
-    ///
-    /// Also what an item costs or grants while merely held - the Ancient Idol's shield, the
-    /// Cactus's thorns. Those are status changes, but they belong here rather than in
-    /// Effects: Effects answers "what happens when you use this", and neither item is ever
-    /// used.
+    /// Item-specific facts that are not the result of using the item: reach, durations, a bare
+    /// "???", and what an item grants while merely held - Effects answers "what happens when
+    /// you use this", and a passive item is never used.
     /// </summary>
     Custom,
 
@@ -43,12 +34,8 @@ internal enum Block
 /// Collects description lines into sections and renders them in a fixed order.
 ///
 /// Owning the separators here is the point: callers never embed "\n", pad with spaces to
-/// share a line, or leave doubled blank lines for a final Replace to clean up.
-///
-/// Sections are separated by a blank line, with one deliberate exception: Weight sits flush
-/// under Cooking. They are the two lines about the item rather than about its effects, and
-/// reading them as one group is what stops the overlay looking like it has a stray trailing
-/// line.
+/// share a line, or leave doubled blank lines for a final Replace to clean up. Sections are
+/// separated by a blank line, except that Weight sits flush under Cooking.
 /// </summary>
 internal sealed class DescriptionLayout
 {

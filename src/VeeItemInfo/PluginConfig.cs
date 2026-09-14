@@ -33,13 +33,8 @@ internal static class PluginConfig
     internal static ConfigEntry<float> LineSpacing = null!;
 
     /// <summary>
-    /// How hard the contrast curve on an icon's alpha is - 1 leaves it alone.
-    ///
-    /// The game's icons are authored with very wide feathered edges: a status icon is pure
-    /// white in RGB with the entire shape carried in alpha, and nearly as many of its pixels
-    /// are part-transparent as are solid. That reads as a soft, muddy glyph at the size the
-    /// overlay draws them, and it is in the artwork rather than in anything the mod does - a
-    /// copy of the game's own texture at 1:1 is exactly as soft.
+    /// How hard the contrast curve on an icon's alpha is - 1 leaves it alone. The game's icons
+    /// are soft because the artwork is soft; see <see cref="StatusIcons.Sharpen"/>.
     /// </summary>
     internal static ConfigEntry<float> IconSharpness = null!;
 

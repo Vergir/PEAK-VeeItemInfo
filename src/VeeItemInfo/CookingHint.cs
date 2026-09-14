@@ -3,31 +3,20 @@ using UnityEngine;
 namespace VeeItemInfo;
 
 /// <summary>
-/// The one line that says what cooking does to an item.
+/// The one line that says what cooking does to an item: <b>should I put it on the fire
+/// again?</b> About the <i>next</i> cook, not the cooking already done. Cooking rewrites the
+/// component fields the rest of the overlay reads, so a cooked item's numbers are already
+/// right everywhere else.
 ///
-/// Deliberately not a cook-stage counter. Cooking mutates the very component fields the rest
-/// of the overlay reads - <see cref="ItemCooking.ChangeStatsCooked"/> rewrites
-/// <c>Action_RestoreHunger.restorationAmount</c> and <c>Action_GiveExtraStamina.amount</c> in
-/// place, and the cooking behaviours switch actions on and off - so a cooked item's numbers
-/// are already correct everywhere else without any help from here. All this line answers
-/// is: <b>should I put it on the fire again?</b>
-///
-/// That question is about the <i>next</i> cook, not the cooking the item has already had.
-/// Getting that wrong is what made a Big Lollipop already at stage 1 promise a gain for a
-/// second cook that changes nothing at all.
-///
-/// Shapes, and no blast icon anywhere:
-///   +&lt;fire&gt;      the next cook improves it.
+/// Shapes:
+///   +&lt;fire&gt;      the next cook improves it (+++ for a cook that makes it cure curse).
 ///   -&lt;fire&gt;      the next cook makes it worse - burnt, poisoned.
 ///   ---&lt;fire&gt;    the next cook destroys it - wrecked, popped, melted.
 ///   &lt;fire&gt; -&gt; 4.8m [+20 &lt;injury&gt;]   cooking turns it into a blast over that radius.
 ///   (nothing)     cooking is impossible, or the next cook changes nothing worth saying.
 ///
-/// A dynamite glyph was tried for the explosion case and rejected: it reads as danger, but
-/// most of these explosions help - Antidote, Cure-All and Faerie Lantern all become a cloud
-/// of what they do. Where an explosion does hurt, the injury figure says so outright, which
-/// is honest in a way a symbol is not. "It becomes a cloud of what it does" is the whole
-/// message; the cloud's own effect is not repeated on the line.
+/// Why these shapes: docs/design.md, "The cooking hint". The ladder and behaviours they
+/// judge: docs/internals_game.md, "Cooking".
 /// </summary>
 internal static class CookingHint
 {
@@ -66,27 +55,14 @@ internal static class CookingHint
 
     /// <summary>
     /// What one more turn on the fire would do to this item, or null when there is nothing
-    /// worth saying.
-    ///
-    /// The stat ladder in <c>ChangeStatsCooked</c> is not linear, which is why the stage
-    /// matters. Reaching stage 1 doubles hunger restoration and multiplies bonus stamina -
-    /// or hands out ten where there was none, so <i>every</i> consumable gains at stage 1;
-    /// reaching stage 2 changes <i>nothing</i>; stage 3 and beyond burn it, taking 5 off the
-    /// hunger restored each time, zeroing bonus stamina, and from stage 4 adding poison.
-    ///
-    /// Behaviours are judged by what kind they are, never by which item carries them: an
-    /// explosion is a blast or a destruction depending on what its prefab does, enabling an
-    /// action is a gain, lengthening an affliction is a gain, wrecking is destruction.
-    /// Disabling an action is not judged at all - on every food it comes with the ladder's
-    /// gain anyway, and on the one item where it stands alone the game's data is missing the
-    /// replacement it enables, so nothing is claimed either way.
+    /// worth saying. Behaviours are judged by what kind they are, never by which item carries
+    /// them. Disabling an action is not judged: on every food it comes with the ladder's gain
+    /// anyway, and on the Blowgun, where it stands alone, the replacement it enables is null.
     /// </summary>
     /// <remarks>
-    /// <paramref name="cooking"/> is null for a prefab that carries no ItemCooking. That is
-    /// most foods: Item.Awake does GetOrAddComponent, so every live item has one, and a prefab
-    /// without one behaves as the default - cookable, no behaviours, the plain stat ladder.
-    /// Describing the absence as that default is what keeps the showcase honest about the 45
-    /// consumables whose prefab never mentions cooking.
+    /// <paramref name="cooking"/> is null for a prefab with no ItemCooking - most foods. A
+    /// live item always has one (Item.Awake adds it), so the absence is described as the
+    /// default: cookable, no behaviours, the plain stat ladder.
     /// </remarks>
     internal static string? Describe(GameObject item, ItemCooking? cooking)
     {
@@ -101,9 +77,8 @@ internal static class CookingHint
             return null;
         }
 
-        // timesCookedLocal is set from the item's data on a live instance and already folds
-        // preCooked in; on a prefab it is still zero, so preCooked is the floor. Cooked Bird
-        // ships at stage 1, and its prefab was promising a gain for the cook that changes nothing.
+        // timesCookedLocal already folds preCooked in on a live instance; on a prefab it is
+        // still zero, so preCooked is the floor (Cooked Bird ships at stage 1).
         int cooked = Mathf.Max(cooking.timesCookedLocal, cooking.preCooked);
         int next = cooked + 1;
         if (next > GameValues.CookingMax)
@@ -193,8 +168,8 @@ internal static class CookingHint
             return Good();
         }
 
-        // Reaching stage 2 changes nothing at all. Saying "+" here told players to cook a
-        // Big Lollipop from Cooked to Well Done for a benefit that does not exist.
+        // Reaching stage 2 changes nothing at all, so saying "+" would send players to the
+        // fire for a benefit that does not exist.
         if (next == 2)
         {
             return null;
@@ -205,10 +180,8 @@ internal static class CookingHint
 
     /// <summary>
     /// Whether the stat ladder changes anything the player gets. Every consumable gains at
-    /// stage 1, because ChangeStatsCooked adds a stamina action where there is none. A
-    /// non-consumable gains only if a hunger or stamina action of its fires on use rather than
-    /// on consumption - Scout Cookies - since cooking rewrites those fields regardless of how
-    /// the item is used.
+    /// stage 1; a non-consumable only if a hunger or stamina action of its fires on use rather
+    /// than on consumption (Scout Cookies).
     /// </summary>
     private static bool LadderApplies(GameObject item, bool consumable)
     {
@@ -246,9 +219,8 @@ internal static class CookingHint
 
     /// <summary>
     /// How much switching these scripts on gains: 0 where none is an action currently off,
-    /// 1 for an action, 3 where that action removes curse. Curse is the status almost
-    /// nothing in the game takes off, so a cook that makes an item cure it is the one cook
-    /// worth three plusses - Mandrake in 2.4.b, but asked of the action rather than the name.
+    /// 1 for an action, 3 where that action removes curse - the status almost nothing takes
+    /// off. Asked of the action, not the item's name.
     /// </summary>
     private static int EnableStrength(CookingBehavior_EnableScripts enable)
     {
@@ -287,9 +259,7 @@ internal static class CookingHint
             return Destroyed();
         }
 
-        // The blast radius is AOE.range, not a collider. Reading a SphereCollider was the
-        // first attempt and silently found nothing, which is why every exploding item was
-        // falling through to the plain red minus.
+        // The blast radius is AOE.range, not a collider - a SphereCollider read found nothing.
         AOE? blast = null;
         float injury = -1f;
         foreach (AOE aoe in prefab.GetComponentsInChildren<AOE>(includeInactive: true))
@@ -301,12 +271,8 @@ internal static class CookingHint
 
             blast ??= aoe;
 
-            // Only injury is called out. A helpful explosion says nothing beyond its reach.
-            //
-            // Delivered, not advertised. RPC_CookingExplode explicitly handles the local
-            // character still holding the item, so a cooking explosion going off point-blank is
-            // the ordinary case rather than an edge one - a stovetop advertising 20 injury
-            // gives 17.5.
+            // Only injury is called out, and delivered rather than advertised: a cooking
+            // explosion goes off in the holder's hand, so point-blank is the ordinary case.
             if (aoe.statusType == CharacterAfflictions.STATUSTYPE.Injury && aoe.statusAmount > 0f)
             {
                 injury = Mathf.Max(injury, Blast.Delivered(aoe, aoe.statusAmount));

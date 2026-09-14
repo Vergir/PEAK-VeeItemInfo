@@ -7,25 +7,13 @@ using UnityEngine.TextCore;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Makes the game's own status icons usable inside our TextMeshPro text.
-///
-/// PEAK draws the icons above the stamina bar with BarAffliction, which pairs an Image
-/// with the STATUSTYPE it represents. We scrape those and assemble a TMP_SpriteAsset, so
-/// descriptions can say "+30 &lt;flame&gt;" instead of "GAIN 30 HOT". Borrowing the game's
-/// art means the icons always match the game's visual language, and there is nothing to
-/// ship or attribute.
-///
-/// Each icon lives on its own texture, and a sprite asset draws from exactly one texture.
-/// Chaining one asset per icon as fallbacks does not resolve reliably - TMP just renders its
-/// missing-sprite placeholder - so everything is packed into a single atlas first and the
-/// whole set becomes one asset.
-///
-/// Those textures are 512 a side and the sprite rects inside them are neither square nor
-/// whole-numbered - Crab is 295x468, Curse is 435.85x494.85 at a fractional offset - so
-/// nothing here may assume a size or an alignment it has not read.
-///
-/// Everything degrades to plain text: if any of this fails, <see cref="Tag"/> returns the
-/// status name and the overlay stays readable.
+/// Makes the game's own status icons usable inside our TextMeshPro text: scraped off the
+/// HUD, packed into one atlas (a sprite asset draws from exactly one texture, and chained
+/// fallbacks do not resolve), and exposed as a TMP_SpriteAsset. Nothing here may assume a
+/// size or alignment it has not read - the source rects are neither square nor
+/// whole-numbered. Everything degrades to plain text: if any of this fails, <see cref="Tag"/>
+/// returns the status name and the overlay stays readable. The pipeline and its traps are
+/// in docs/internals_infra.md, "Icons".
 /// </summary>
 internal static class StatusIcons
 {
@@ -65,25 +53,11 @@ internal static class StatusIcons
     private const float IconScale = 0.85f;
 
     /// <summary>
-    /// How many pixels tall each icon is copied at.
-    ///
-    /// <b>Height, not the long side.</b> A glyph's height is what is pinned to the font:
-    /// <see cref="ApplyMetrics"/> gives every icon a height of <see cref="IconScale"/> em and
-    /// lets its width follow its own aspect. The sources are nothing like square - Numbness is
-    /// 128x85, Crab is 295x468 - so capping the long side gave a wide icon fewer vertical
-    /// pixels than a tall one for the same drawn height.
-    ///
-    /// 128 covers the whole config range with room to spare. An icon draws at
-    /// <c>IconScale x Font Size x canvas scale</c>, which is about 40 pixels at the default 20
-    /// on a HiDPI display and about 145 at the maximum 72 - so the only case this does not
-    /// cover outright is the largest font on the largest display, where it upscales slightly.
-    /// The atlas lands at 1024x512, two megabytes.
-    ///
-    /// <b>This was briefly derived per-build from the live Font Size and canvas scale</b>, with
-    /// the atlas repacking whenever either moved. That existed to chase a sharpness problem
-    /// which turned out to be the artwork rather than the resolution - see <see cref="Sharpen"/>
-    /// - so it was buying a smaller atlas and nothing else, at the price of an expensive scene
-    /// scan hanging off a config slider. A constant is the right shape for it.
+    /// How many pixels tall each icon is copied at. Height, not the long side, because a
+    /// glyph's height is what <see cref="ApplyMetrics"/> pins to the font and the sources are
+    /// nothing like square. 128 covers the whole Font Size range on a HiDPI display with room
+    /// to spare. A constant on purpose: deriving it from the live font size was tried and
+    /// bought nothing but a scene scan hanging off a config slider.
     /// </summary>
     private const int IconPixelHeight = 128;
 
@@ -184,9 +158,7 @@ internal static class StatusIcons
             // petrify icon. Without this, Injury gets the wrong picture.
             string name = bar.isPetrify ? "Petrify" : bar.afflictionType.ToString();
 
-            // The colour rides along on the walk we are already doing. Sampled every time
-            // rather than only on a first sight, because the bar is the authority and this
-            // costs nothing beyond what the icon scrape already paid for.
+            // The colour rides along on the walk we are already doing.
             SampleBarColour(bar, name);
 
             if (seen.Add(name))
@@ -203,42 +175,23 @@ internal static class StatusIcons
             icons.Add(IconSource.FromSprite("ExtraStamina", staminaIcon));
         }
 
-        // It has no BarAffliction, but it does have a *bar* - the short second stripe under
-        // the main one - so the colour is readable even though it needed its icon fetching by
-        // hand. extraBarStamina is the fill; the icon beside it is tinted to match and stands
-        // in if the fill turns out to be untinted.
-        //
-        // Keyed with the space, because "Extra Stamina" is what EffectColors is asked for.
-        // The icon is registered without one only because a sprite name cannot contain a
-        // space, and the two lookups are not the same table.
-        // Icon first, bar second: the later reading wins, so the bar is preferred and the icon
-        // is only what remains if the fill turns out to be untinted.
+        // Its colour comes from the short second stamina stripe; the icon beside it is tinted
+        // to match and is sampled first so the bar's reading wins. Keyed *with* the space,
+        // because that is what EffectColors is asked for - the sprite key has none only
+        // because a sprite name cannot contain one.
         SampleIndicatorColour(staminaBar?.extraStaminaIcon, "Extra Stamina");
         SampleIndicatorColour(staminaBar?.extraBarStamina, "Extra Stamina");
 
-        // Two more indicators hang off the stamina bar as plain GameObjects rather than
-        // BarAfflictions, so they need fetching by hand. 'shield' is the invincibility
-        // marker; 'campfire' is what the game shows while you cannot get hungry, and its
-        // artwork is the campfire we want for the cooking hint.
+        // Two more indicators hang off the stamina bar as plain GameObjects: the invincibility
+        // marker, and the campfire shown while you cannot get hungry - the cooking hint's fire.
         AddBarIndicator(icons, seen, staminaBar?.shield, "Shield");
         AddBarIndicator(icons, seen, staminaBar?.campfire, "Cook");
 
-        // A stand-in for "some item", used where a description needs to talk about an item
-        // without naming one. BingBong is the game's own mascot and reads as generic; the
-        // item carries a tag saying so, which beats knowing what it is called.
+        // A stand-in for "some item": the game's own mascot, found by its tag rather than name.
         AddItemIcon(icons, seen, "Item", FirstItemWith(item => item.itemTags.HasFlag(Item.ItemTags.BingBong)));
 
-        // The Rope Cannon describes two distances that would otherwise be a pair of bare
-        // numbers: how far it shoots, and how much rope that leaves behind. Its own icon and
-        // the spool's tell them apart without a word, and the anti-rope pair gets its own set
-        // so a floating rope never advertises itself with an ordinary one.
-        //
-        // Asked of the components rather than of four item names. The names were exact matches
-        // because "RopeShooter" is a prefix of "RopeShooterAnti" and one of them was spelled
-        // "Anti-Rope Spool" with a space - the sort of detail that is right until the day it
-        // is not, and goes quiet rather than failing. What actually separates the pairs is
-        // what the description chain already uses to tell them apart: a cannon that fires
-        // floating rope carries Antigrav, and a spool says isAntiRope itself.
+        // The Rope Cannon's two distances are told apart by its own icon and the spool's, with
+        // a separate pair for floating rope. Asked of the components, not of four item names.
         AddItemIcon(icons, seen, "RopeCannon", FirstItemWith(item =>
             item.GetComponent<RopeShooter>() != null && item.GetComponent<Antigrav>() == null));
         AddItemIcon(icons, seen, "RopeCannonAnti", FirstItemWith(item =>
@@ -248,10 +201,8 @@ internal static class StatusIcons
         AddItemIcon(icons, seen, "RopeSpoolAnti", FirstItemWith(item =>
             item.GetComponent<RopeSpool>() is RopeSpool spool && spool.isAntiRope));
 
-        // "You float." Scout's Initiative drops your gravity rather than granting speed, and a
-        // balloon is the game's own picture of that - no status icon exists for it. Two
-        // pictures, in fact, told apart by the component's own isBunch: a single balloon for
-        // a little lift, the bunch for three balloons' worth or more.
+        // "You float": a balloon is the game's own picture of low gravity, and the bunch its
+        // picture of three balloons' worth or more.
         AddItemIcon(icons, seen, "Float", FirstItemWith(item =>
             item.GetComponent<Balloon>() is Balloon balloon && !balloon.isBunch));
         AddItemIcon(icons, seen, "FloatBunch", FirstItemWith(item =>
@@ -280,24 +231,11 @@ internal static class StatusIcons
     }
 
     /// <summary>
-    /// Reads a status's colour off its own bar.
-    ///
-    /// A BarAffliction carries three Images: a dark backing, and the bright fill on two
-    /// overlapping sprites that always agree with each other. **The fill is the colour two of
-    /// them share**, which is the one thing that distinguishes it without naming anything.
-    ///
-    /// Brightest-wins was tried first and is wrong for a dark status. Curse is nearly black,
-    /// so its backing outshone its own fill and the overlay read `#635660` for a colour that
-    /// is `#1B0043`. Sprite names would work - `DitherStripes` and `UI_Blur_Outlne_Thick`
-    /// against `procedural_ui_image_default_sprite` - and are exactly the kind of lookup that
-    /// goes quiet after a UI reshuffle, which every other name-keyed lookup here has been
-    /// retired for.
-    ///
-    /// Finding no pair samples nothing, leaving the hand-picked table in place. That is the
-    /// right way to fail: a wrong colour is worse than an old one.
-    ///
-    /// The bar's own icon is skipped. It is a white silhouette tinted by its Image, so it
-    /// would happily pair with anything and says nothing about the status.
+    /// Reads a status's colour off its own bar: the fill is the colour two of its Images
+    /// share. Not brightest-wins (Curse's backing outshines its fill) and not sprite names (a
+    /// lookup that goes quiet after a UI reshuffle). Finding no pair samples nothing, leaving
+    /// the table in place - a wrong colour is worse than an old one. The bar's own icon is
+    /// skipped because a tinted white silhouette would pair with anything.
     /// </summary>
     private static void SampleBarColour(BarAffliction bar, string name)
     {
@@ -372,14 +310,9 @@ internal static class StatusIcons
             return;
         }
 
-        // Shield and Cook are the two of the mod's invented keys that turn out to have a
-        // colour in the game after all. Both are white silhouettes tinted by their Image, the
-        // same arrangement as a status bar's fill, so that tint is the colour the HUD shows -
-        // and it was being hand-picked beside the icon we already scrape from here.
-        //
-        // Sample refuses a white Image, which is what an untinted indicator looks like, so a
-        // marker the game does not colour keeps the hand-picked entry rather than turning
-        // into the default.
+        // Shield and Cook are white silhouettes tinted by their Image, so that tint is the
+        // HUD's colour for them. Sample refuses a white Image, so an untinted marker keeps
+        // the hand-picked entry.
         EffectColors.Sample(name, image!.color);
 
         if (seen.Add(name))
@@ -459,25 +392,16 @@ internal static class StatusIcons
     }
 
     /// <summary>
-    /// Packs the icon of every item that another item turns into.
-    ///
-    /// Two fields in 2.1.a name a different item: <c>Action_ConsumeAndSpawn.itemToSpawn</c>,
-    /// which is how each Berrynana hands you its own coloured peel, and
-    /// <c>CookingBehavior_ReplaceItem.replaceWithItem</c>, which is how a cooked Frog becomes
-    /// FrogLegs. A line saying "this becomes that" has to show <i>that</i>, and which item it
-    /// is comes off the field rather than from anything we choose here.
-    ///
-    /// So the set is collected by asking the prefabs, not by listing the five names 2.1.a
-    /// happens to have. Naming them would go stale silently, and it would also be a
-    /// judgement about which transformations matter that these two fields already make.
+    /// Packs the icon of every item that another item turns into - a Berrynana's peel
+    /// (<c>Action_ConsumeAndSpawn.itemToSpawn</c>), a cooked Frog's legs
+    /// (<c>CookingBehavior_ReplaceItem.replaceWithItem</c>). Collected by asking the prefabs,
+    /// not by listing names, which would go stale silently.
     /// </summary>
     private static void AddTransformationIcons(List<IconSource> icons, HashSet<string> seen)
     {
         foreach (Item item in AllItems())
         {
-            // A prefab lives in the asset database rather than a scene, so nothing on one is
-            // active in any hierarchy. includeInactive is mandatory, not a precaution - the
-            // no-argument overload returns nothing at all.
+            // A prefab is never active, so includeInactive is mandatory here.
             foreach (Action_ConsumeAndSpawn spawn in item.GetComponentsInChildren<Action_ConsumeAndSpawn>(true))
             {
                 AddItemIcon(icons, seen, spawn.itemToSpawn);
@@ -505,13 +429,8 @@ internal static class StatusIcons
     private static string KeyFor(Item item) => item.name.Replace(" ", "");
 
     /// <summary>
-    /// A tag for an item's own icon, falling back to the generic item glyph rather than to
-    /// the item's name.
-    ///
-    /// <see cref="Tag"/>'s fallback is right for a status, whose name is a word a player
-    /// reads on the HUD. An item's is a prefab name - "Berrynana Peel Pink Variant" - which
-    /// is both English and internal. The generic glyph already means "some item", which is
-    /// the honest thing to say when the real one could not be packed.
+    /// A tag for an item's own icon, falling back to the generic item glyph - never to the
+    /// item's name, which is a prefab name: English and internal.
     /// </summary>
     internal static string ItemTag(Item item) =>
         Tags.TryGetValue(KeyFor(item), out string? tag) ? tag : Tag("Item");
@@ -554,10 +473,7 @@ internal static class StatusIcons
 
     /// <summary>
     /// The first item in the database that answers to <paramref name="matches"/>, or null.
-    ///
-    /// This replaced a pair of by-name lookups. Asking what an item *is* rather than what it
-    /// is called is the same rule the description chain follows, and for the same reason: a
-    /// name goes stale without failing, and the first sign is an icon quietly missing.
+    /// Asks what an item *is* rather than what it is called; a name goes stale without failing.
     /// </summary>
     private static Item? FirstItemWith(Func<Item, bool> matches)
     {
@@ -599,22 +515,10 @@ internal static class StatusIcons
     }
 
     /// <summary>
-    /// Steepens an icon's alpha ramp around its midpoint, tightening the edge.
-    ///
-    /// The game authors these icons for a much larger display than a line of overlay text: a
-    /// status icon is pure white in RGB with the entire shape carried in alpha, and nearly as
-    /// many of its pixels are part-transparent as are solid. Drawn at forty-odd pixels that
-    /// reads as a soft, muddy glyph.
-    ///
-    /// <b>None of that is the mod's doing</b>, which took some finding. A copy of the game's
-    /// own texture at 1:1, uncropped and unscaled, is exactly as soft as the packed one - so
-    /// the atlas resolution, the packer and the sampling were all innocent, and no amount of
-    /// packing an icon larger ever helped.
-    ///
-    /// Runs after the downscale rather than before it, because the downscale softens the edge
-    /// again and this is what puts it back. Applied to every icon: a feathered alpha boundary
-    /// is an artefact of the authoring size whatever the artwork inside it is, and hardening
-    /// it only ever moves the silhouette's own edge.
+    /// Steepens an icon's alpha ramp around its midpoint, tightening the edge. The game's
+    /// icons are soft because the artwork is soft - a 1:1 copy is exactly as soft as the
+    /// packed one - so this, not resolution, is what sharpens them. Runs after the downscale
+    /// because the downscale softens the edge again. See docs/internals_game.md, "The HUD".
     /// </summary>
     private static void Sharpen(Texture2D copy)
     {
@@ -636,18 +540,10 @@ internal static class StatusIcons
     }
 
     /// <summary>
-    /// Whether an icon should take the colour of the text beside it.
-    ///
-    /// TMP's <c>tint=1</c> multiplies the sprite by the surrounding text colour. That is
-    /// exactly right for the game's status icons, which are white silhouettes coloured by
-    /// their UI Image at runtime - multiplying white by the status colour reproduces what the
-    /// HUD shows. It is exactly wrong for art that already carries its own colours: the
-    /// numbness mushrooms, and the item icons pulled from ItemDatabase. Multiplying those by
-    /// anything darkens them, which is how tinting a mushroom by its own pale stem colour
-    /// turned the whole icon muddy.
-    ///
-    /// Decided by looking at the texture rather than by keeping a list of names, because a
-    /// list would silently rot the first time the game recolours an icon.
+    /// Whether an icon should take the colour of the text beside it. <c>tint=1</c> multiplies
+    /// the sprite by the text colour: right for a white silhouette, wrong for artwork with its
+    /// own colours, which it darkens. Decided by looking at the texture rather than by a list
+    /// of names, which would rot the first time the game recoloured an icon.
     /// </summary>
     private static bool ShouldTint(Texture2D texture)
     {
@@ -743,19 +639,10 @@ internal static class StatusIcons
                 string name = icons[i].Name;
                 Rect uv = uvs[i];
 
-                // The packed cell is the glyph, because MakeReadable cropped each copy to its
-                // own sprite rect - so there is no sub-rect left to map.
-                //
-                // The *size* is taken from the copy rather than from the packer's UV rect,
-                // which is a difference that grows as the cells shrink. Rounding
-                // uv.width x atlas.width back to whole texels can land a pixel out, and a
-                // glyph rect one pixel wrong does not crop the sprite - it rescales it, so
-                // every texel afterwards is sampled off-grid and the whole icon softens. One
-                // pixel in 495 is nothing; one in 28 is nearly four percent.
-                //
-                // The copy's own dimensions are exact and already known. They can only
-                // disagree with the packed cell if PackTextures had to shrink something to
-                // fit, which needs saying rather than silently absorbing.
+                // The packed cell is the glyph, because each copy was cropped to its own rect.
+                // Its size is taken from the copy, not the packer's UV rect: rounding UVs back
+                // to texels can land a pixel out, and a glyph rect one pixel wrong rescales
+                // the sprite rather than cropping it, softening the whole icon.
                 int x = Mathf.RoundToInt(uv.x * atlas.width);
                 int y = Mathf.RoundToInt(uv.y * atlas.height);
                 int w = copies[i].width;
@@ -904,11 +791,7 @@ internal static class StatusIcons
     /// <summary>
     /// Copies one icon through the GPU so its pixels can be read back, cropped to
     /// <paramref name="region"/> and shrunk to <paramref name="pixelHeight"/> pixels tall.
-    ///
-    /// Both of those ride along on the blit the readback already needed, so neither costs a
-    /// pass. The crop is what lets <see cref="BuildAtlas"/> treat a packed cell as the glyph
-    /// rect outright: the copy is the icon and nothing else, so there is no sub-rect left to
-    /// map through the packer's own scaling.
+    /// Both ride along on the blit the readback already needed.
     /// </summary>
     private static Texture2D MakeReadable(Texture source, Rect region, int pixelHeight)
     {
@@ -1001,11 +884,8 @@ internal static class StatusIcons
         Tags.Clear();
         Glyphs.Clear();
 
-        // Aspects is indexed in step with Glyphs by ApplyMetrics, so leaving it behind while
-        // clearing Glyphs makes the next build read the previous one's shapes: the list grows
-        // by an atlas each rebuild and every glyph takes its width from the stale entry at the
-        // same index. It survived only because a rebuild used to pack the same icons in the
-        // same order, which stopped being true the moment the set could vary.
+        // Aspects is indexed in step with Glyphs; leaving it behind made the next build read
+        // the previous one's shapes.
         Aspects.Clear();
 
         // The palette is read on the same walk that builds the icons, so it is only ever as

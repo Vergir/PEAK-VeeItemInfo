@@ -5,19 +5,9 @@ namespace VeeItemInfo;
 
 /// <summary>
 /// Owns the TextMeshPro object the description is drawn into, and keeps it sitting above
-/// whichever inventory slot holds the item being described.
-///
-/// Placement went through a few wrong turns worth recording, so they don't get retried:
-///
-///   - Parenting into ItemPromptLayout makes the game's layout group own our position,
-///     leaving box width as the only way to move the text sideways.
-///   - Setting LayoutElement.ignoreLayout to escape that stops the overlay rendering.
-///   - Offsets from a screen corner drift, because the HUD reflows with aspect ratio.
-///   - ItemPromptLayout is a full-height container, so its corners sit at the screen edges
-///     rather than around the prompts you can actually see.
-///
-/// What works: parent to Canvas_HUD, which neither positions nor clips us, and each frame
-/// measure the slot we want to sit above. Rendering is safe, tracking is exact.
+/// whichever inventory slot holds the item being described. Parented to the HUD canvas, which
+/// neither positions nor clips it, and measuring the slot each frame; four other placements
+/// failed and are listed in docs/internals_infra.md, "Overlay placement".
 /// </summary>
 internal static class Overlay
 {
@@ -60,11 +50,8 @@ internal static class Overlay
 
     internal static void Create()
     {
-        // The singleton and its canvas, rather than a scene path and a child name. Both used
-        // to be strings - "GAME/GUIManager" and "Canvas_HUD" - and either would have gone
-        // quiet the day the game moved an object or renamed it, taking the whole overlay with
-        // it and saying nothing. GUIManager.instance and GUIManager.hudCanvas are public
-        // fields, so a rename breaks this build instead.
+        // The singleton and its canvas, not a scene path and a child name: a rename breaks
+        // this build instead of quietly finding nothing.
         guiManager = GUIManager.instance;
         if (guiManager == null)
         {
@@ -244,13 +231,9 @@ internal static class Overlay
         {
             textMesh.spriteAsset = StatusIcons.SpriteAsset;
 
-            // The text has to be built again, not just re-pointed at the new asset.
-            // StatusIcons.Tag falls back to the status name in capitals when the atlas is not
-            // ready, so a description assembled before this point contains the literal word
-            // HUNGER rather than a sprite tag - and assigning a sprite asset cannot go back
-            // and change a string that has already been built. Until this existed, the only
-            // thing that repaired it was the periodic re-check happening to come round.
-            // Icons also change the line metrics, so the cached height is stale too.
+            // The text has to be built again, not just re-pointed at the new asset: a
+            // description assembled before the atlas existed holds the word HUNGER, not a
+            // sprite tag. Icons also change the line metrics, so the cached height is stale.
             lastText = "";
             ItemInfoController.MarkDirty();
         }

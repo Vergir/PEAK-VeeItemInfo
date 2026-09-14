@@ -4,34 +4,19 @@ using System.Reflection;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Numbers the game declares as compile-time constants, read at runtime instead.
-///
-/// Ordinary field and property access - <c>aoe.range</c>, <c>item.CarryWeight</c> - is already
-/// dynamic: the value comes off the running game, and a rename breaks our build. A
-/// <c>const</c> is the one thing that does not work that way. C# inlines it at the call site,
-/// so writing <c>CharacterAfflictions.STATUS_INCREMENT</c> bakes 0.025 into this assembly and
-/// a patch that changed the value would leave a shipped build quietly saying the old thing -
-/// exactly the failure this mod keeps having with hardcoded numbers.
-///
-/// <c>FieldInfo.GetRawConstantValue</c> reads the literal out of the loaded assembly's
-/// metadata, so it does follow a patch. Each reading here still names the member through
-/// <c>nameof</c> and passes the compiled value as the fallback, which keeps both halves: a
-/// rename or removal breaks the build, and a value change is picked up without one.
-///
-/// <b>Fallback, never throw.</b> This is a read-only overlay, and an exception on the build
-/// path blanks it - the failure the whole design already avoids, from
-/// <see cref="EffectColors.Get"/> never throwing to <see cref="StatusIcons.Tag"/> degrading to
-/// plain text. A number that is one patch stale still describes the item usefully; no overlay
-/// describes nothing. What must not happen is a *silent* fallback, so every one of them warns
-/// once, by name, and the log says which value is being used instead.
+/// Numbers the game declares as compile-time constants, read at runtime instead. C# inlines
+/// a <c>const</c> at the call site, so naming one directly would bake the value into this
+/// assembly; <c>GetRawConstantValue</c> reads it out of the loaded game assembly and does
+/// follow a patch. Each reading still names the member through <c>nameof</c>, so a rename
+/// breaks the build, and passes the compiled value as the fallback. Fallback, never throw:
+/// an exception on the build path blanks the overlay, but a silent fallback is not allowed
+/// either, so each one warns once by name.
 /// </summary>
 internal static class GameValues
 {
     /// <summary>
-    /// The smallest change the status bars can record. CharacterAfflictions banks a running
-    /// total per status and only ever spends it in whole units of this - and it is the same
-    /// number behind the weight per carry unit, the status per thorn increment, and the 1/40
-    /// that <c>RoundStatus</c> snaps to.
+    /// The smallest change the status bars can record; the game banks a running total per
+    /// status and only spends it in whole units of this.
     /// </summary>
     internal static float StatusStep { get; } = Constant(
         typeof(CharacterAfflictions),
@@ -46,11 +31,7 @@ internal static class GameValues
     /// </summary>
     internal static float StepsPerBar => 1f / StatusStep;
 
-    /// <summary>
-    /// How many times an item can be cooked. <c>ItemCooking.COOKING_MAX</c> is a const, so
-    /// naming it directly inlines 12 into this assembly and a patch raising the ceiling would
-    /// leave the cooking hint going quiet at the old one.
-    /// </summary>
+    /// <summary>How many times an item can be cooked.</summary>
     internal static int CookingMax { get; } = Constant(
         typeof(ItemCooking),
         nameof(ItemCooking.COOKING_MAX),

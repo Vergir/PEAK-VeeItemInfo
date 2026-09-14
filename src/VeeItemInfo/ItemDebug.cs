@@ -78,18 +78,10 @@ internal static class ItemDebug
     private static string lastAudited = "";
 
     /// <summary>
-    /// Reports anything in a finished description that would render in the overlay's base
-    /// colour rather than a chosen one.
-    ///
-    /// The rule this enforces is that **every visible thing sits inside a colour tag**. It
-    /// used not to be checkable by eye: a missed tag rendered pure white, which reads as
-    /// "bright" rather than "wrong", and on a `tint=1` sprite it looked like a slightly
-    /// crisper icon. Two lines had been leaking for as long as they had existed - the item
-    /// duplication arrow and the low-gravity balloon.
-    ///
-    /// Reads the string that is actually handed to TextMeshPro, so it cannot be fooled by
-    /// how the line was assembled, and it catches leaks nobody thought to look for.
-    /// Whitespace between tags is fine and expected; it is invisible in any colour.
+    /// Reports anything in a finished description that sits outside a colour tag - the rule
+    /// is that every visible thing is inside one, and a leak is not catchable by eye. Reads
+    /// the string actually handed to TextMeshPro, so it cannot be fooled by how a line was
+    /// assembled. Whitespace between tags is invisible in any colour and is fine.
     /// </summary>
     internal static void LogUntagged(string description)
     {
@@ -401,12 +393,8 @@ internal static class ItemDebug
     }
 
     /// <summary>
-    /// What this run dealt the berry in hand, and the whole table behind it.
-    ///
-    /// A Shroomberry's effect and its stamina are both decided once at level generation and
-    /// held in MushroomManager, not rolled when you eat one. Printing the slot this berry
-    /// reads plus the full table is what makes a claim like "no stamina arrives" checkable:
-    /// a berry dealt 0 and a berry that is broken look identical from the bar alone.
+    /// What this map dealt the berry in hand, and the whole table behind it - a berry dealt 0
+    /// and a berry that is broken look identical from the bar alone.
     /// </summary>
     private static string Rolls(Action_RandomMushroomEffect effect)
     {
@@ -428,11 +416,8 @@ internal static class ItemDebug
     }
 
     /// <summary>
-    /// What an Action_Spawn puts into the world.
-    ///
-    /// Sunscreen carries nothing but Action_ReduceUses and Action_Spawn - the protection, its
-    /// duration and the cloud's lifetime are all on the thing it sprays - so a component list
-    /// of the item alone explains none of it.
+    /// What an Action_Spawn puts into the world; everything Sunscreen does is on the thing it
+    /// sprays, not on the bottle.
     /// </summary>
     private static string Spawns(Action_Spawn action)
     {
@@ -455,12 +440,8 @@ internal static class ItemDebug
     }
 
     /// <summary>
-    /// The subtree a breakable item turns into, with the numbers on it.
-    ///
-    /// A component list alone cannot explain a Remedy Fungus, because everything it does
-    /// lives on the prefab it leaves behind rather than on the item you are holding - and
-    /// that subtree is reached by four hardcoded child names, any of which goes null the day
-    /// the game renames one. Printing the real tree is how those names get corrected.
+    /// The subtree a breakable item turns into, with the numbers on it; everything a Remedy
+    /// Fungus does lives there rather than on the item in hand.
     /// </summary>
     private static string BreaksInto(ShelfShroom shroom)
     {
@@ -479,12 +460,8 @@ internal static class ItemDebug
 
     /// <summary>
     /// Walks a prefab subtree, naming each child, **every** component on it, and the figures
-    /// on the ones that describe an effect.
-    ///
-    /// Listing every component is the point. The first version of this printed only AOE,
-    /// TimeEvent and RemoveAfterSeconds, which hid the very thing it was written to find: a
-    /// Remedy Fungus heals over time from a lingering field, and the child holding it looked
-    /// empty because a StatusField is none of those three.
+    /// on the ones that describe an effect. Every component, because a filtered list once hid
+    /// the very StatusField it was written to find.
     /// </summary>
     private static void Describe(StringBuilder tree, Transform parent, int depth)
     {

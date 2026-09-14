@@ -5,19 +5,9 @@ using STATUSTYPE = CharacterAfflictions.STATUSTYPE;
 namespace VeeItemInfo;
 
 /// <summary>
-/// When a change reaches the player. This is the first ordering key, and it is a property of
-/// the effect rather than a bucket a branch chooses: an <see cref="Instant"/> line lands the
-/// moment the item is used, an <see cref="OverTime"/> line unfolds afterwards.
-///
-/// It replaces the old primary/instant/timed lists, which every call site picked by hand and
-/// which conflated three different ideas. "Primary" was really an importance rule - hunger
-/// and stamina lead - and that now falls out of the status order instead. "Timed" was really
-/// "arrived as an Affliction object", which put the instant Affliction_ClearAllStatus at the
-/// bottom of the section while the identical Action_ClearAllStatus sat at the top.
-///
-/// An effect that lands when a timer runs out is not a third value. It is written onto the
-/// line that starts the timer, with an arrow - Energy Drink's boost and the drowsiness it
-/// hands back at the end are one statement, not two.
+/// When a change reaches the player - the first ordering key, and a property of the effect
+/// rather than a bucket a branch chooses. An effect that lands when a timer runs out is not a
+/// third value: it is written onto the line that starts the timer, with an arrow.
 /// </summary>
 internal enum Onset
 {
@@ -81,46 +71,19 @@ internal readonly struct EffectLine
 }
 
 /// <summary>
-/// The one place that decides what order effect lines read in.
-///
-/// Three keys, applied in turn:
-///
-/// 1. <see cref="Onset"/> - what you feel now before what unfolds later. This is the rule
-///    that got Energy Drink right: it strips 100 Drowsy on drinking and hands 25 back when
-///    the boost ends, and the other order says the opposite of what happens.
-/// 2. Status, by the curated order below.
-/// 3. The component the line came from, which for two changes to one status is the order the
-///    game applies them - ItemAction.Subscribe appends to a delegate and OnEnable runs down
-///    the component list. It also makes the order total, so nothing shuffles frame to frame.
-///
-/// **Component order is a key only here, and only because here it is the arithmetic.** It is
-/// arbitrary as a general rule - the Cactus keeps its CactusBall behind a Rigidbody - and it
-/// used to decide everything inside a bucket, which made the ordering unreviewable because no
-/// rule was being followed for anyone to disagree with. Between two changes to the *same
-/// status at the same moment* it is not decoration: the game runs them in that sequence, and
-/// with a status clamped at zero the sequence changes the answer.
-///
-/// That replaced a fourth key, "removals before additions", which guessed at the same thing.
-/// The Book of Bones carries Curse +50 and Curse -25 in that order and nets +25 from any
-/// starting point; sorting the removal first said -25 then +50, which reads as +50 to anyone
-/// with no curse. The rule had been written for Napberry - wipe your drowsiness, then make you
-/// drowsy - and there the clear-all sits before the drowsy addition anyway, so the game's own
-/// order gives the same answer. Redundant where it was right, wrong where it was not.
+/// The one place that decides what order effect lines read in: petrify last, then
+/// <see cref="Onset"/>, then status by the curated order below, then the component the line
+/// came from - which for two changes to one status is the order the game applies them. The
+/// reasons for each key, and the fourth key that was dropped, are in docs/design.md,
+/// "Ordering effects".
 /// </summary>
 internal static class EffectOrder
 {
     /// <summary>
-    /// Status order, curated for reading rather than taken from the game.
-    ///
-    /// The names come from <see cref="STATUSTYPE"/> rather than being spelled out again, so
-    /// a member the game renames or drops breaks the build here instead of silently falling
-    /// to the bottom of every list. Only the sequence is ours.
-    ///
-    /// Hunger and Extra Stamina lead because they are the two figures a player looks for
-    /// first; that is the whole job the old "primary" bucket was doing. Poison sits beside
-    /// Spores and Cold beside Hot because curing one so often touches the other. Petrify and
-    /// Curse trail because they are costs rather than effects. The mod's own keys - Shield,
-    /// Numb, Float - have no STATUSTYPE and are named as the rest of the mod names them.
+    /// Status order, curated for reading. The names come from <see cref="STATUSTYPE"/> rather
+    /// than being spelled out, so a member the game renames or drops breaks the build here
+    /// instead of silently sorting last. The mod's own keys - Shield, Numb, Float - have no
+    /// STATUSTYPE and are named as the rest of the mod names them.
     /// </summary>
     private static readonly string[] Order =
     {
@@ -194,15 +157,10 @@ internal static class EffectOrder
     }
 
     /// <summary>
-    /// Drops a clear-all's line for any status something else already takes down in the same
-    /// breath. Napberry restores 100 hunger *and* clears all status, which is two lines both
-    /// reading "-100 {hunger}" - the second says nothing the first did not.
-    ///
-    /// Only a clear is ever dropped, and only against another *removal*. Two ordinary
-    /// removals of the same status are left alone because they genuinely stack: an item can
-    /// carry two Action_GiveExtraStamina and hand out both. And a clear standing against an
-    /// *addition* is kept deliberately - Napberry wipes your drowsiness and then puts you to
-    /// sleep, and both halves of that are worth reading, removal first.
+    /// Drops a clear-all's line for any status something else already removes at the same
+    /// onset (Napberry: -100 hunger, and a clear-all). Only a clear is ever dropped, and only
+    /// against a removal: two ordinary removals genuinely stack, and a clear against an
+    /// addition is kept on purpose.
     /// </summary>
     private static void DropRedundantClears(List<EffectLine> lines)
     {
@@ -226,11 +184,8 @@ internal static class EffectOrder
 
     private static int Compare(EffectLine a, EffectLine b)
     {
-        // Petrify last, under everything, whatever its onset. It is the one status that is a
-        // price rather than an effect - the amulets charge it for what they just did - so it
-        // reads as a footnote to the lines above it rather than as one of them. This is the
-        // only override of the keys below, and it is deliberate: without it the healing
-        // amulet's instant petrify cost sorted above the shield it buys.
+        // Petrify last, whatever its onset: it is a price rather than an effect, and the only
+        // override of the keys below.
         int byPetrify = IsPrice(a).CompareTo(IsPrice(b));
         if (byPetrify != 0)
         {
@@ -250,16 +205,8 @@ internal static class EffectOrder
         }
 
         // Two changes to the same status at the same moment read in the order the game applies
-        // them, which is the order their components sit on the item: ItemAction.Subscribe
-        // appends to a delegate, and OnEnable runs down the component list.
-        //
-        // This used to be "removals first", which is a guess at something readable. The Book
-        // of Bones carries Curse +50 and Curse -25 in that order and nets +25 from any
-        // starting point; sorting the removal first said -25 then +50, which reads as +50 to
-        // anyone with no curse, because a removal at zero does nothing. The rule was written
-        // for Napberry - wipe your drowsiness, then make you drowsy - and there the clear-all
-        // sits before the drowsy addition anyway, so the game's own order already gives the
-        // same answer. It was redundant where it was right and wrong where it was not.
+        // them, which is the order their components sit on the item. Not "removals first" -
+        // that was a guess at this, and the Book of Bones proved it wrong.
         return a.Source.CompareTo(b.Source);
     }
 

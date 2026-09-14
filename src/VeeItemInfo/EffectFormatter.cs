@@ -60,28 +60,15 @@ internal static class EffectFormatter
 
     /// <summary>
     /// Petrify, in the whole points the game actually gives you, then on the status scale.
-    ///
-    /// It is the one status that is not continuous. `CharacterData.petrifyAmount` is an
-    /// `int`, and every route into it - `AddStatus`, `SetStatus`, `SubtractStatus` - runs
-    /// `Mathf.FloorToInt(amount * 100f)` before calling `AddPetrify`. So a `petrifyPerUse` of
-    /// `0.075` is **7**, and <see cref="Scaled"/> reporting 7.5 overstated every amulet whose
-    /// cost was not a whole percent.
-    ///
-    /// Floor, not round, because that is what the game does: 7.9 points is still 7. The
-    /// floor is to whole points of the game's own 100-point scale; the display scale applies
-    /// after, so at a scale of 10 those 7 points read 0.7 - petrify lands on the same bar as
-    /// everything else and has to read on the same scale.
+    /// The game floors petrify to an int on its 100-point scale before storing it, so a
+    /// `petrifyPerUse` of 0.075 is 7, not 7.5; the display scale applies after the floor.
     /// </summary>
     internal static string WholePoints(float fraction) =>
         Scaled(Mathf.Floor(fraction * 100f) / 100f);
 
     /// <summary>
-    /// A signed, coloured amount followed by the status icon - "+30 &lt;flame&gt;".
-    ///
-    /// The sign states which way the status moves, so no wording is needed and the line
-    /// reads the same in any language. Colour comes from the status itself rather than
-    /// from whether the change is good for you: the icon already carries that meaning,
-    /// and tying colour to the status keeps it consistent with the game's own bars.
+    /// A signed, coloured amount followed by the status icon - "+30 &lt;flame&gt;". The sign
+    /// says which way the status moves; the colour is the status's own, not good-or-bad.
     /// </summary>
     internal static string Token(float amount, string effect) =>
         Colored((amount > 0f ? "+" : "-") + Scaled(Mathf.Abs(amount)), effect);
@@ -129,42 +116,14 @@ internal static class EffectFormatter
     internal const string Infinity = "∞";
 
     /// <summary>
-    /// The statuses a clear-all actually removes, in display order.
-    ///
-    /// Not every status, and not the display order's own list - the two were one array
-    /// until this split, and it was quietly lying. **Thorns was in the old list**, so every
-    /// clear-all item in the game promised to strip 100 thorns it has never once removed.
-    ///
-    /// <b>Who consults this</b>, since a derived list makes that unanswerable from the source:
-    /// <c>Action_ClearAllStatus</c>, which in 2.1.a is on <b>Napberry</b> and the <b>Book of
-    /// Bones</b> and nothing else; <c>RitualDaggerFeedBehavior</c>, which clears whoever it is
-    /// fed to; and the <c>Chaos</c> affliction below. A walk of all 194 item prefabs settled
-    /// the first of those - an older note here named Cure-All, Pandora's Lunchbox and the
-    /// Blowgun dart as clear-all items and all three were wrong. Cure-All in particular carries
-    /// <c>Action_AddOrRemoveThorns</c> with a count of <c>-5</c>, so it really does take thorns
-    /// off, which is presumably how it got mistaken for one.
-    ///
-    /// Napberry's own <c>otherExclusions</c> is <c>[Crab]</c>, which <c>StatusIsCurable</c>
-    /// already refuses - a prefab restating a rule the game enforces anyway, and a reason to
-    /// ask the game rather than trust the list beside it.
-    ///
-    /// <b>Asked of the game rather than listed.</b> <c>ClearAllStatus</c> keeps no list: it
-    /// walks every <c>STATUSTYPE</c> and asks <c>StatusIsCurable</c>, which refuses Crab,
-    /// Weight, Thorns and Arrow outright and defers Curse and Petrify to its callers. Asking
-    /// the same question means a patch that makes a status curable, or stops one being so, is
-    /// followed rather than described from memory. The four names that used to be written here
-    /// are now nobody's opinion.
-    ///
-    /// Two judgements are left, and both are ours rather than the game's. A status with no
-    /// icon is skipped, because <see cref="StatusIcons.Tag"/> falls back to the name in
-    /// capitals and listing it would put English back on the line. And
-    /// <see cref="TooRareToList"/> is left out on purpose - see there.
-    ///
-    /// Curse is not here because almost every clear-all excludes it; callers add it when
-    /// their own flag says it is included. Petrify likewise, and it sorts last anyway.
-    ///
-    /// Recomputed whenever the icons are rebuilt, since that is what decides which entries
-    /// can be rendered at all.
+    /// The statuses a clear-all actually removes, in display order. Asked of the game -
+    /// <c>StatusIsCurable</c> for every <c>STATUSTYPE</c>, which is the question
+    /// <c>ClearAllStatus</c> itself asks - rather than listed, so a status becoming curable is
+    /// followed. Two omissions are ours: a status with no icon (its fallback is English) and
+    /// <see cref="TooRareToList"/>. Curse and Petrify are added by callers whose own flag says
+    /// so. Recomputed whenever the icons are rebuilt, since that decides which entries can be
+    /// rendered. Which items clear, and how the two clear-alls differ: docs/internals_game.md,
+    /// "Clearing all status".
     /// </summary>
     internal static IReadOnlyList<string> Clearable => clearable ??= ReadClearable();
 
@@ -174,16 +133,10 @@ internal static class EffectFormatter
     internal static void ForgetClearable() => clearable = null;
 
     /// <summary>
-    /// Statuses a clear-all really does remove, and the overlay still does not name.
-    ///
-    /// Web, FlyTrap and Thorns come from hazards a player meets rarely, so on almost every
-    /// clear-all item they are two or three lines describing something the reader is not
-    /// carrying and will not be. The list is an editorial choice about what is worth a line,
-    /// which is why it is stated here rather than smuggled in as a filter.
-    ///
-    /// Thorns is already refused by <c>StatusIsCurable</c>, so today this changes nothing for
-    /// it. It stays named because the reason to leave it out is ours and would outlive a patch
-    /// that made thorns curable.
+    /// Statuses a clear-all really does remove and the overlay still does not name: they come
+    /// from hazards a player meets rarely, so the line would describe something the reader is
+    /// not carrying. An editorial choice, stated here rather than smuggled in as a filter;
+    /// Thorns stays named even though the game refuses it anyway, because the reason is ours.
     /// </summary>
     private static readonly CharacterAfflictions.STATUSTYPE[] TooRareToList =
     {
@@ -235,28 +188,17 @@ internal static class EffectFormatter
     internal static string Metres(float value) => Num(value) + "m";
 
     /// <summary>
-    /// How many metres a Unity unit is, read from the game rather than assumed.
-    ///
-    /// <c>CharacterStats.unitsToMeters</c> is what turns your hip height into the altitude the
-    /// end screen shows, so it is the game's own answer and not a convention borrowed from the
-    /// wiki. It is 1.6 in 2.1.a, which is what the amulet radii were checked against, and
-    /// reading it means a rebalance moves the whole overlay with it.
-    ///
-    /// The fallback is only for a call that lands before the field is touched; a static field
-    /// with an initialiser is set by the type initialiser, so in practice it is always there.
+    /// How many metres a Unity unit is, read from the game: <c>CharacterStats.unitsToMeters</c>
+    /// is what turns hip height into the altitude readout. The fallback is only for a call
+    /// that lands before the static field is touched.
     /// </summary>
     private static float UnityUnitsToMetres =>
         CharacterStats.unitsToMeters > 0f ? CharacterStats.unitsToMeters : 1.6f;
 
     /// <summary>
-    /// A distance held in Unity units, shown in the metres a player reads. Radii, ranges and
-    /// raycast lengths in the game are all Unity units, and printing one with an "m" after it
-    /// understates the distance by well over a third.
-    ///
-    /// Show Unity Meters in config skips the conversion, for players who think in the units
-    /// every other measuring mod reports. The Rope Cannon's rope length reaches here only
-    /// when Show Real Rope Length is on; otherwise it prints the spool's own figure through
-    /// <see cref="Metres"/>, which this setting leaves alone.
+    /// A distance held in Unity units, shown in the metres a player reads; every radius, range
+    /// and raycast in the game is in units. Show Unity Meters skips the conversion. The Rope
+    /// Cannon's rope length reaches here only when Show Real Rope Length is on.
     /// </summary>
     internal static string PeakMetres(float unityUnits) =>
         Metres(PluginConfig.UnityMetres.Value ? unityUnits : unityUnits * UnityUnitsToMetres);
@@ -278,11 +220,8 @@ internal static class EffectFormatter
 
     /// <summary>
     /// One amount <i>shared across</i> several statuses - "-60 &lt;injury&gt;/&lt;poison&gt;",
-    /// meaning 60 points of relief split between them, not 60 off each.
-    ///
-    /// Slashes are deliberately reserved for this one meaning. Only the healing amulet works this way in
-    /// PEAK 2.1.a; using slashes anywhere else would blur the distinction that makes them
-    /// worth having.
+    /// 60 points of relief split between them, not 60 off each. A slash between icons is
+    /// reserved for this meaning; see docs/design.md, "Reading a line".
     /// </summary>
     internal static string SharedBudget(float amount, params string[] statuses)
     {
@@ -295,12 +234,9 @@ internal static class EffectFormatter
     }
 
     /// <summary>
-    /// How many icons fit on one line before it starts to read as a wall. Past this the eye
-    /// stops counting them and the overlay wraps at an arbitrary point instead of a chosen
-    /// one, so the break is made here rather than left to the text box.
-    ///
-    /// Three rather than four: Scout's Tenacity heals six statuses, and four broke it into
-    /// an uneven 4 and 2 where three gives two even rows.
+    /// How many icons fit on one line before it reads as a wall; the break is made here rather
+    /// than left to the text box. Three rather than four because Tenacity's six statuses
+    /// split evenly that way.
     /// </summary>
     private const int IconsPerLine = 3;
 
@@ -340,12 +276,9 @@ internal static class EffectFormatter
     }
 
     /// <summary>
-    /// "Clear all status", one keyed line per status actually removed. Leaving the excluded
-    /// ones out of the run says which are spared without naming them.
-    ///
-    /// Collapsing them into a shared "-100 &lt;seven icons&gt;" line was tried and dropped: it
-    /// reads as a single pooled effect, which is what <see cref="SharedBudget"/> means, and
-    /// clearing all status is emphatically not that. Every status loses its full 100.
+    /// "Clear all status", one keyed line per status actually removed - never a pooled
+    /// "-100 &lt;seven icons&gt;", which would read as a <see cref="SharedBudget"/>. Leaving the
+    /// excluded ones out of the run says which are spared without naming them.
     /// </summary>
     internal static List<EffectLine> ClearedStatuses(bool excludeCurse,
         IEnumerable<CharacterAfflictions.STATUSTYPE>? exclusions)
@@ -400,25 +333,12 @@ internal static class EffectFormatter
     }
 
     /// <summary>
-    /// A status change spread over time, in whichever of the two forms tells the truth.
-    /// **This is the only place that choice is made.** It used to be picked branch by
-    /// branch, which is how Heat Pack ended up stating a total twenty times the scale
-    /// maximum while the item beside it stated a rate.
-    ///
-    /// **Total and duration** - "-35 &lt;injury&gt; / 15s" - is the default, and the form
-    /// worth having: it answers "what does this do to me", and a duration you can wait out.
-    ///
-    /// **Rate and duration** - "-6 &lt;cold&gt; /s → 360s" - where the total runs past a full
-    /// bar and so describes arithmetic rather than anything a player can feel. A Heat Pack's
-    /// 6 a second across 360 seconds multiplies out to 2160 on a scale that stops at 100;
-    /// the rate is what you get and the duration is how long you keep getting it.
-    ///
-    /// **Rate alone** is <see cref="PerSecond"/>, called directly by the one case with no
-    /// duration to state at all: a lantern warms you until its fuel runs out, and stating a
-    /// total would make a nearly-spent lantern read differently from a full one.
-    ///
-    /// The threshold is a full bar, because that is the point past which a figure stops
-    /// meaning anything - you cannot be more than 100 cold.
+    /// A status change spread over time: total and duration ("-35 &lt;injury&gt; / 15s") by
+    /// default, or rate and duration ("-6 &lt;cold&gt; /s → 360s") where the total runs past a
+    /// full bar and so stops meaning anything. **This is the only place that choice is
+    /// made**; picked branch by branch, two items side by side stated the same kind of effect
+    /// differently. <see cref="PerSecond"/> alone is for the case with no duration at all.
+    /// See docs/design.md, "Reading a line".
     /// </summary>
     internal static string OverTime(float total, float seconds, string effect)
     {
@@ -433,22 +353,15 @@ internal static class EffectFormatter
                 + EffectColors.Neutral + Arrow + Seconds(seconds) + "</color>";
         }
 
-        // The suffix sits inside a colour tag on purpose. Left bare it rendered in TMP's
-        // default pure white, brighter than the figure in front of it - the known case in
-        // the white-leak audit.
+        // The suffix sits inside a colour tag on purpose; bare, it rendered in TMP's white.
         return Token(total, effect) + EffectColors.Neutral + " / " + Seconds(seconds) + "</color>";
     }
 
     /// <summary>
     /// Describes an affliction as keyed lines, by looking its type up in
     /// <see cref="AfflictionHandlers"/>. An unrecognised type returns nothing rather than
-    /// guessing.
-    ///
-    /// Every handler states its own <see cref="Onset"/>, and that is the point of the split:
-    /// afflictions used to be posted wholesale into the "timed" bucket, so
-    /// Affliction_ClearAllStatus - which fires in OnApplied and is as instant as anything in
-    /// the game - sorted below every instant line, while the identical Action_ClearAllStatus
-    /// sorted above them.
+    /// guessing. Every handler states its own <see cref="Onset"/>: an affliction is not
+    /// "timed" just because it arrived as an Affliction object.
     /// </summary>
     internal static List<EffectLine> Affliction(PeakAffliction? affliction)
     {
@@ -465,25 +378,11 @@ internal static class EffectFormatter
 
     /// <summary>
     /// Which method describes which affliction type - the same shape as
-    /// <c>ItemDescriptionBuilder.Handlers</c>, for the same reason. This was a chain of
-    /// twelve <c>else if</c> tests, and a type with no branch fell off the end into an empty
-    /// list with nothing to say so. As a table, what is and is not described is one list to
-    /// read rather than a chain to count.
-    ///
-    /// Types with no entry, each checked against the 2.1.a item database:
-    /// <list type="bullet">
-    /// <item><c>HealAll</c>, <c>BingBongShield</c>, <c>PoisonOverTime</c> - described by the
-    /// component carrying them (<c>Action_HealingGem</c>, <c>BingBongShieldWhileHolding</c>,
-    /// <c>Action_InflictPoison</c> and the Scorpion).</item>
-    /// <item><c>LowGravity</c>, <c>Blind</c>, <c>Numb</c> - reach a player only from the
-    /// Shroomberry roll, which <c>????</c> withholds on purpose. Mandrake's numbness comes
-    /// through <c>Action_Numb</c>.</item>
-    /// <item><c>Glowing</c> - Mushroom Glow, which is not in the live game.</item>
-    /// <item><c>ClimbingChalk</c>, <c>Exhausted</c>, <c>AdjustStatusOverTime</c> - read by
-    /// nothing in the game.</item>
-    /// <item><c>ZombieBite</c>, <c>PreventPoisonHealing</c>, <c>NoHunger</c> - mobs and
-    /// campfires, never an item.</item>
-    /// </list>
+    /// <c>ItemDescriptionBuilder.Handlers</c>, for the same reason. Types with no entry are
+    /// either described by the component carrying them (HealAll, BingBongShield,
+    /// PoisonOverTime), withheld on purpose because they only reach a player through the
+    /// Shroomberry roll (LowGravity, Blind, Numb), or dead code and mob-only afflictions - see
+    /// docs/design.md, "What is deliberately not shown".
     /// </summary>
     private static readonly Dictionary<PeakAffliction.AfflictionType, Action<PeakAffliction, List<EffectLine>>>
         AfflictionHandlers = new()
@@ -504,18 +403,14 @@ internal static class EffectFormatter
 
     private static void DescribeFasterBoi(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Three stamina icons for "you move faster", deliberately not the infinity mark:
-        // the stamina is not infinite here, only the movement is quicker, and reusing
-        // the infinity mark would say the wrong thing. The run and climb windows differ
-        // by climbDelay; the shorter one is the honest figure to show.
+        // Three stamina icons for "you move faster", not the infinity mark: the stamina is not
+        // infinite here. The run and climb windows differ by climbDelay; the shorter is shown.
         Affliction_FasterBoi effect = (Affliction_FasterBoi)affliction;
         string text = EffectColors.Neutral + Seconds(effect.totalTime) + "</color> "
             + IconRun(new[] { "Extra Stamina", "Extra Stamina", "Extra Stamina" });
 
-        // The drowsiness Energy Drink hands back when its boost ends belongs on this
-        // line rather than on one of its own. It is a single statement - faster now,
-        // sleepy afterwards - and the arrow is the word "afterwards". An effect that
-        // lands when a timer runs out is never a line of its own.
+        // The drowsiness handed back when the boost ends is welded on with an arrow: an effect
+        // that lands when a timer runs out is never a line of its own.
         if (effect.drowsyOnEnd > 0f)
         {
             text += EffectColors.Neutral + Arrow + "</color>" + Token(effect.drowsyOnEnd, "Drowsy");
@@ -532,7 +427,6 @@ internal static class EffectFormatter
 
     private static void DescribeAddBonusStamina(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Was "GAIN 100 EXTRA STAMINA" - the last piece of prose left on a common path.
         Affliction_AddBonusStamina effect = (Affliction_AddBonusStamina)affliction;
         lines.Add(new EffectLine(Token(effect.staminaAmount, "Extra Stamina"),
             Onset.Instant, "Extra Stamina", effect.staminaAmount));
@@ -540,10 +434,8 @@ internal static class EffectFormatter
 
     private static void DescribeInfiniteStamina(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // A duration, the infinity mark, and the stamina icon - flush, because the mark
-        // qualifies the icon rather than standing on its own. Where climbDelay grants a
-        // longer running window than a climbing one, the shorter figure is shown: it is
-        // the one you can rely on whatever you are doing.
+        // Where climbDelay grants a longer running window than a climbing one, the shorter
+        // figure is shown: it is the one you can rely on whatever you are doing.
         Affliction_InfiniteStamina effect = (Affliction_InfiniteStamina)affliction;
         lines.Add(new EffectLine(InfiniteStamina(effect.totalTime),
             Onset.OverTime, "Extra Stamina", 1f));
@@ -563,10 +455,8 @@ internal static class EffectFormatter
 
     private static void DescribeDrowsyOverTime(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Affliction_AdjustDrowsyOverTime.UpdateEffect applies statusPerSecond * deltaTime
-        // every frame, so the total is exactly statusPerSecond * totalTime (verified
-        // against 2.1.a). The original rounded to multiples of 2.5 for no reason, which
-        // could be off by up to 1.25.
+        // UpdateEffect applies statusPerSecond * deltaTime every frame, so the total is
+        // exactly rate x time - not rounded to 2.5s, as it once was.
         Affliction_AdjustDrowsyOverTime effect = (Affliction_AdjustDrowsyOverTime)affliction;
         string drowsy = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Drowsy");
         if (drowsy.Length > 0)
@@ -577,13 +467,8 @@ internal static class EffectFormatter
 
     private static void DescribeColdOverTime(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Heat Pack, and the last prose in the mod - it used to read
-        // "GAIN/REMOVE {n} COLD OVER {n}s". The sign says which way the status moves,
-        // the icon says what moves, and the duration says how long it keeps moving.
-        //
-        // UpdateEffect applies statusPerSecond * deltaTime every frame, so the total is
-        // the rate times the time - which here is 2160 on a scale that stops at 100.
-        // OverTime sees that and states the rate instead; the branch does not choose.
+        // Heat Pack. The total is rate x time, which here runs past a full bar; OverTime
+        // sees that and states the rate instead - the branch does not choose.
         Affliction_AdjustColdOverTime effect = (Affliction_AdjustColdOverTime)affliction;
         string cold = OverTime(effect.statusPerSecond * effect.totalTime, effect.totalTime, "Cold");
         if (cold.Length > 0)
@@ -594,16 +479,9 @@ internal static class EffectFormatter
 
     private static void DescribeChaos(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Cleared, then an unknown amount handed straight back. Showing the pair on one
-        // line per status is what makes the randomisation legible - two separate blocks
-        // read as two unrelated effects rather than one shuffle.
-        //
-        // OnApplied calls ClearAllStatus(excludeCurse: false) and then redistributes over
-        // its own list of eight: Cold, Hot, Poison, Drowsy, Injury, Hunger, Spores and
-        // Curse. So Curse is both cleared and refillable, and Thorns is in neither half.
-        // Thorns was in this loop until the clearable set was split out, carrying a
-        // hand-written exception that said the randomiser could not hand thorns back;
-        // the exception is gone because the status never belonged here at all.
+        // Cleared, then an unknown amount handed straight back - one line per status, so the
+        // randomisation reads as one shuffle rather than two unrelated effects. OnApplied
+        // clears with excludeCurse false and refills Curse too, so Curse is in both halves.
         foreach (string status in Clearable)
         {
             lines.Add(new EffectLine(Reshuffled(status), Onset.Instant, status, -1f));
@@ -615,8 +493,7 @@ internal static class EffectFormatter
 
     private static void DescribeInvincibility(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Fortified Milk and the healing amulet both grant this. It was going unreported
-        // entirely - there was no branch for it, so the shield line simply never appeared.
+        // Fortified Milk and the healing amulet both grant this.
         lines.Add(new EffectLine(
             EffectColors.Neutral + Seconds(affliction.totalTime) + "</color> "
             + EffectColors.Get("Shield") + StatusIcons.Tag("Shield") + "</color>",
@@ -636,12 +513,8 @@ internal static class EffectFormatter
 
     private static void DescribeMassSuperJump(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Scout's Initiative. It does not grant speed - it launches everyone nearby and
-        // drops their gravity, so the balloon is the right symbol for what you feel.
-        //
-        // lowGravAmount feeds the same float-and-jump formula as the number of balloons you
-        // are holding, so it is a balloon count. Three or more is drawn as the bunch - the
-        // game's own second picture of the same lift, and what the Initiative hands out.
+        // Scout's Initiative drops gravity rather than granting speed, so the balloon is the
+        // symbol. lowGravAmount is a balloon count; three or more is drawn as the bunch.
         Affliction_MassSuperJump effect = (Affliction_MassSuperJump)affliction;
         string icon = effect.lowGravAmount >= 3 && StatusIcons.HasIcon("FloatBunch") ? "FloatBunch" : "Float";
         lines.Add(new EffectLine(
@@ -653,15 +526,8 @@ internal static class EffectFormatter
 
     private static void DescribeSunscreen(PeakAffliction affliction, List<EffectLine> lines)
     {
-        // Just how long it lasts. Naming the biome it protects you in was the only
-        // English this line ever had, and the item's own icon on the line above already
-        // says what it is.
-        //
-        // No icon of its own, and two candidates were tried and dropped. Heat behind a
-        // shield overpromises: AddSunHeat is skipped for anyone wearing sunscreen, so
-        // this is immunity to the *sun*, and a campfire will still cook you. The parasol
-        // - the other half of that same check - is accurate but reads as a different
-        // item rather than as this one's duration.
+        // Just how long it lasts. No icon of its own: two candidates were tried and dropped
+        // (docs/design.md, "Reading a line").
         Affliction_Sunscreen effect = (Affliction_Sunscreen)affliction;
         lines.Add(new EffectLine(EffectColors.Neutral + Seconds(effect.totalTime) + "</color>",
             Onset.OverTime));
