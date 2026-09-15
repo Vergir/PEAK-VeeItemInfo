@@ -3,20 +3,14 @@ using BepInEx.Configuration;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Read by BepInEx ConfigurationManager through reflection - it matches this class by name
-/// and reads the fields it knows, so there is no assembly to reference. Only the fields the
-/// mod uses are declared.
+/// Read by BepInEx ConfigurationManager through reflection, matched by class name, so there
+/// is no assembly to reference. Only the fields the mod uses are declared.
 /// </summary>
 internal sealed class ConfigurationManagerAttributes
 {
-    /// <summary>
-    /// Position within a section, highest first. Without it the F1 menu sorts every section
-    /// alphabetically, which put Show Cooking Hint above Show Custom - the opposite of the
-    /// order the overlay draws them in.
-    /// </summary>
+    /// <summary>Position within a section, highest first; without it the menu sorts alphabetically.</summary>
     public int? Order;
 
-    /// <summary>Hidden behind the menu's "advanced" toggle.</summary>
     public bool? IsAdvanced;
 }
 
@@ -32,78 +26,33 @@ internal static class PluginConfig
     internal static ConfigEntry<float> OutlineWidth = null!;
     internal static ConfigEntry<float> LineSpacing = null!;
 
-    /// <summary>
-    /// How hard the contrast curve on an icon's alpha is - 1 leaves it alone. The game's icons
-    /// are soft because the artwork is soft; see <see cref="StatusIcons.Sharpen"/>.
-    /// </summary>
     internal static ConfigEntry<float> IconSharpness = null!;
 
     internal static ConfigEntry<float> Width = null!;
     internal static ConfigEntry<float> OffsetX = null!;
     internal static ConfigEntry<float> OffsetY = null!;
 
-    // One toggle per section of the overlay, so a player who only cares about weight can
-    // have just that. Defaults are all on - the mod's whole purpose is the information.
     internal static ConfigEntry<bool> ShowCustom = null!;
     internal static ConfigEntry<bool> ShowEffects = null!;
     internal static ConfigEntry<bool> ShowCooking = null!;
     internal static ConfigEntry<bool> ShowWeight = null!;
 
-    /// <summary>
-    /// What a full status bar reads as. Every status is a 0-1 fraction in the game;
-    /// <see cref="EffectFormatter.Scaled"/> multiplies by this, and petrify and weight ride
-    /// the same scale because they land on the same bars.
-    /// </summary>
     internal static ConfigEntry<int> StatusScale = null!;
-
-    /// <summary>
-    /// Distances in raw Unity units rather than the metres the altitude readout shows.
-    /// The Rope Cannon's rope length only follows this when Show Real Rope Length is on -
-    /// otherwise it matches the spool's own display, whatever the unit.
-    /// </summary>
     internal static ConfigEntry<bool> UnityMetres = null!;
-
-    /// <summary>
-    /// Colour a Shroomberry's ???? by whether its slot is good or bad. A colour's valence is
-    /// fixed across runs, which is what makes this a hint rather than a spoiler.
-    /// </summary>
     internal static ConfigEntry<bool> ShroomberryHint = null!;
-
-    /// <summary>
-    /// A berry past both quotas is a genuine coin flip and shows half green, half red. This
-    /// reads the actual roll and commits to one colour. Nothing without the hint.
-    /// </summary>
     internal static ConfigEntry<bool> PurpleSpoiler = null!;
-
-    /// <summary>This map's dealt stamina for the berry, instead of the 0-15 span.</summary>
     internal static ConfigEntry<bool> EnergySpoiler = null!;
-
-    /// <summary>A blank line between sections, or every line flush.</summary>
     internal static ConfigEntry<bool> SectionSpacing = null!;
-
-    /// <summary>
-    /// Show a mushroom and its poisonous twin - the game gives both the same name - with the
-    /// same "0/+20 poison" line, so the overlay stops telling them apart by their effects.
-    /// </summary>
     internal static ConfigEntry<bool> HidePoisonTwins = null!;
-
     internal static ConfigEntry<bool> RealRopeLength = null!;
     internal static ConfigEntry<bool> PeriodicRefresh = null!;
-
-    /// <summary>
-    /// The held-item log, and - once per switch-on, the next time an item is held - the
-    /// whole-database dump. One switch: nobody turns on diagnostics without wanting both.
-    /// </summary>
     internal static ConfigEntry<bool> DebugLogging = null!;
 
     internal static void Bind(ConfigFile config)
     {
-        // Every numeric setting declares a range on purpose. Without one, config editors
-        // such as ConfigurationManager fall back to a text box that only commits on Enter,
-        // which reads as "changing the value does nothing". A range gets you a live slider.
-        //
-        // Order runs downward within each section, so the menu shows settings in the order
-        // they are bound here.
+        // Every numeric setting declares a range: without one ConfigurationManager renders a
+        // text box that only commits on Enter, which reads as "changing the value does
+        // nothing". Order runs downward within each section.
         FontSize = Bind(config, Appearance, "Font Size", 20f, 8f, 72f, 80,
             "Font size for the description text.");
         OutlineWidth = Bind(config, Appearance, "Outline Width", 0f, 0f, 1f, 70,
@@ -115,12 +64,7 @@ internal static class PluginConfig
             + "reads as blurry at overlay size. 1 leaves them exactly as the game has them.");
         SectionSpacing = Bind(config, Appearance, "Add Space Between Sections", true, 40,
             "A blank line between the item-specific facts, the effects and the cooking/weight.");
-        // Icon size and alignment are constants in StatusIcons, expressed as fractions of
-        // the font size. That makes Font Size the single knob for how big everything is.
 
-        // Offsets are measured from the top-centre of whichever inventory slot holds the
-        // item being described, so the overlay follows the selected slot and holds at any
-        // resolution.
         Width = Bind(config, Appearance, "Width", 200f, 50f, 2000f, 30,
             "Width of the text box. Text wraps at this width.");
         OffsetX = Bind(config, Appearance, "Offset X", 0f, -1500f, 1500f, 20,
@@ -160,8 +104,7 @@ internal static class PluginConfig
             + "The amount is rolled per map like the effect, so this too shows information the "
             + "game hides - which is why it is off by default.");
 
-        // No apostrophe: BepInEx rejects ' in a key, and a throw here takes the whole plugin
-        // down with it - Awake never finishes, so nothing loads and nothing appears in F1.
+        // No apostrophe: BepInEx rejects ' in a key, and a throw here stops the plugin loading.
         HidePoisonTwins = Bind(config, ItemInfo, "Do Not Distinguish Poisonous Mushrooms", false, 40,
             "Some mushrooms have a poisonous twin that looks slightly different and carries the same "
             + "name. Off, the poisonous one shows its poison and the safe one shows none. On, both show "
@@ -183,8 +126,6 @@ internal static class PluginConfig
             + "the game, with what the overlay says for it, to BepInEx/VeeItemInfo-items.txt. "
             + "Switch it off and on again to write that file again.", advanced: true);
 
-        // Re-apply on change so the overlay can be styled and positioned while the game
-        // is running, instead of a rebuild-and-relaunch for every nudge.
         config.SettingChanged += (_, _) =>
         {
             // Switching debug off arms the next switch-on to dump the database again.
@@ -216,10 +157,6 @@ internal static class PluginConfig
     private static ConfigurationManagerAttributes Attributes(int order, bool advanced = false) =>
         new() { Order = order, IsAdvanced = advanced ? true : null };
 
-    /// <summary>
-    /// Whether a section is switched on. Called for every line added, so it stays a plain
-    /// switch over already-bound entries rather than a dictionary lookup.
-    /// </summary>
     internal static bool ShowBlock(Block block) => block switch
     {
         Block.Custom => ShowCustom.Value,

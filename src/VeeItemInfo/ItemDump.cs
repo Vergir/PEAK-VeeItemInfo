@@ -9,13 +9,8 @@ using UnityEngine;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Writes every item in the database to one file: its components with the fields that drive
-/// the description, and what <see cref="ItemDescriptionBuilder.Build"/> returns for it.
-///
-/// One file answers what would otherwise be a round trip per item - which affliction a dart
-/// carries, whether any prefab sets a flag, which items show a blank Effects section. It runs
-/// on the database prefabs rather than live items, which is also the shape the preview page
-/// will need, so this doubles as the proof that Build works on a prefab at all.
+/// Writes every item in the database to one file - its components and what
+/// <see cref="ItemDescriptionBuilder.Build"/> returns for it - and the showcase beside it.
 /// </summary>
 internal static class ItemDump
 {
@@ -24,9 +19,8 @@ internal static class ItemDump
     private static bool written;
 
     /// <summary>
-    /// Writes the dump the first time this is called after debug logging was switched on.
     /// Called from the held-item refresh, because holding an item is the one moment the
-    /// database is certain to be loaded - a switch-on in the menu screen would find nothing.
+    /// database is certain to be loaded.
     /// </summary>
     internal static void WriteOnce()
     {
@@ -39,7 +33,6 @@ internal static class ItemDump
         Write();
     }
 
-    /// <summary>Arms the next <see cref="WriteOnce"/>, for a switch-off or a hot reload.</summary>
     internal static void Forget() => written = false;
 
     internal static void Write()
@@ -68,8 +61,7 @@ internal static class ItemDump
         List<PreviewPage.Row> rows = new();
         int failed = 0;
 
-        // Nobody is holding a prefab, and the showcase should read as the ordinary case - a
-        // human - rather than as whoever happened to be a skeleton when the dump ran.
+        // The showcase should read as the ordinary case, whoever happened to run the dump.
         ItemDescriptionBuilder.AssumeHuman = true;
         try
         {
@@ -82,7 +74,6 @@ internal static class ItemDump
 
         File.WriteAllText(path, text.ToString());
 
-        // The same rows as a page, beside the text: the showcase is this dump rendered.
         string pagePath = Path.Combine(Paths.BepInExRootPath, "VeeItemInfo-showcase.html");
         File.WriteAllText(pagePath, PreviewPage.Render(rows));
 
@@ -96,8 +87,7 @@ internal static class ItemDump
         {
             text.Append("==== ").Append(entry.Key).Append(" ====\n");
 
-            // Each item on its own, so one prefab that throws costs one entry rather than
-            // the whole file.
+            // One prefab that throws costs one entry rather than the whole file.
             try
             {
                 text.Append(ItemDebug.Components(entry.Value)).Append('\n');
@@ -118,10 +108,7 @@ internal static class ItemDump
         }
     }
 
-    /// <summary>
-    /// The rich text with its colour tags stripped and each sprite reduced to its name in
-    /// braces, so a description reads as "+20 {Hunger}" rather than a wall of markup.
-    /// </summary>
+    /// <summary>Colour tags stripped and each sprite reduced to "{Name}".</summary>
     private static string Plain(string richText)
     {
         string sprites = Regex.Replace(richText, "<sprite[^>]*name=\"([^\"]+)\"[^>]*>", "{$1}");

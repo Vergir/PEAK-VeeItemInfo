@@ -30,11 +30,7 @@ public partial class Plugin : BaseUnityPlugin
         Log.LogInfo($"Plugin {Name} is loaded!");
     }
 
-    /// <summary>
-    /// Undoes everything Awake did. Required for hot reloading (AutoReload and similar):
-    /// without it a reload leaves the old patches applied and the old overlay in the HUD,
-    /// so each reload stacks another copy on top of the last.
-    /// </summary>
+    /// <summary>Undoes everything Awake did, or each hot reload stacks another copy.</summary>
     private void OnDestroy()
     {
         foreach (Harmony harmony in patches)
@@ -50,18 +46,13 @@ public partial class Plugin : BaseUnityPlugin
         Log.LogInfo($"Plugin {Name} is unloaded!");
     }
 
-    /// <summary>
-    /// Harmony resolves patch targets by name at runtime, so a method renamed by a game
-    /// update fails here rather than at build time. Patching one type at a time keeps a
-    /// single dead target from taking the whole plugin down with it.
-    /// </summary>
+    /// <summary>One type at a time, so a target that fails at runtime costs one hook, not the plugin.</summary>
     private void ApplyPatches()
     {
         foreach (Type patchType in PatchTypes)
         {
             try
             {
-                // Keep the instance so OnDestroy can unpatch it again on reload.
                 patches.Add(Harmony.CreateAndPatchAll(patchType, $"{Id}.{patchType.Name}"));
             }
             catch (Exception e)

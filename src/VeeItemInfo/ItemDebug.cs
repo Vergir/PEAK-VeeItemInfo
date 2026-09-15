@@ -5,18 +5,13 @@ using UnityEngine;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Dumps what an item is actually made of, so an unrecognised item can be identified
-/// without decompiling first. Spawn the item, hold it with Debug Logging on, and the log
-/// names every component the description chain could have matched.
+/// The "[item]" and "[color]" diagnostics. See docs/internals_infra.md, "Diagnostics".
 /// </summary>
 internal static class ItemDebug
 {
     private static string lastLogged = "";
 
-    /// <summary>
-    /// Logs the held item once per item, not once per refresh - the poll would otherwise
-    /// repeat the same block every second.
-    /// </summary>
+    /// <summary>Once per item name, not once per refresh.</summary>
     internal static void LogItem(Item item)
     {
         if (item.gameObject.name == lastLogged)
@@ -28,11 +23,7 @@ internal static class ItemDebug
         Plugin.Log.LogInfo(Components(item));
     }
 
-    /// <summary>
-    /// The item's name, tags and every component on it, with the fields that drive the
-    /// description. Shared by the held-item log and the whole-database dump, so the two can
-    /// never disagree about what a component is worth printing.
-    /// </summary>
+    /// <summary>Shared by the held-item log and the database dump.</summary>
     internal static string Components(Item item)
     {
         GameObject itemGameObj = item.gameObject;
@@ -50,8 +41,6 @@ internal static class ItemDebug
                 continue;
             }
 
-            // Transform and the renderer/collider furniture are on everything and say
-            // nothing about what the item does.
             System.Type type = component.GetType();
             if (type == typeof(Transform) || type == typeof(RectTransform))
             {
@@ -60,10 +49,6 @@ internal static class ItemDebug
 
             report.Append("\n[item]   ").Append(type.FullName);
 
-            // Duplicated components with different values are the hardest bug to see from a
-            // type list alone - two Action_GiveExtraStamina on one item look identical here
-            // but produce two lines in the overlay. Printing the value each one carries, and
-            // whether it is switched on, makes that obvious without a decompile.
             if (component is Behaviour behaviour && !behaviour.enabled)
             {
                 report.Append(" [DISABLED]");
@@ -78,10 +63,8 @@ internal static class ItemDebug
     private static string lastAudited = "";
 
     /// <summary>
-    /// Reports anything in a finished description that sits outside a colour tag - the rule
-    /// is that every visible thing is inside one, and a leak is not catchable by eye. Reads
-    /// the string actually handed to TextMeshPro, so it cannot be fooled by how a line was
-    /// assembled. Whitespace between tags is invisible in any colour and is fine.
+    /// Warns about any visible run outside a colour tag. Reads the string handed to
+    /// TextMeshPro, so it cannot be fooled by how a line was assembled.
     /// </summary>
     internal static void LogUntagged(string description)
     {
@@ -159,7 +142,7 @@ internal static class ItemDebug
         }
     }
 
-    /// <summary>The fields worth seeing, for the components that drive the description.</summary>
+    /// <summary>The fields that drive the description.</summary>
     private static string Values(Component component) => component switch
     {
         Action_RestoreHunger a => $" restorationAmount={a.restorationAmount} onConsumed={a.OnConsumed}",
@@ -192,13 +175,10 @@ internal static class ItemDebug
         VineShooter a => $" maxLength={a.maxLength}u -> {a.maxLength * CharacterStats.unitsToMeters}m",
         MagicBean a => a.plantPrefab == null ? " plantPrefab=<none>" : $" maxLength={a.plantPrefab.maxLength}u",
         Action_Spawn a => Spawns(a),
-        // segmentLength is the figure the description derives from the joint geometry; the
-        // achievement metres are what the spool's own UI shows and the overlay matches by default.
         RopeShooter a => $" shootRange={a.maxLength}u ropeSegments={a.length}"
             + $" segmentLength={ItemDescriptionBuilder.RopeSegmentLength(a)}u"
             + $" achievementMetres={Rope.GetLengthInMeters(a.length)}",
-        // RopeFuel goes through GetData, which needs a live instance - on a database
-        // prefab it throws. A prefab has no scene, which is how the two are told apart.
+        // RopeFuel needs a live instance; on a prefab (no scene) it throws.
         RopeSpool a => (a.gameObject.scene.IsValid()
                 ? $" fuel={a.RopeFuel} metres={Rope.GetLengthInMeters(a.RopeFuel)}"
                 : " fuel=<prefab>")
@@ -225,11 +205,6 @@ internal static class ItemDebug
         _ => "",
     };
 
-    /// <summary>
-    /// Every cooking behaviour on the item, with what it would do. The type list alone said
-    /// "behaviours=1" for Fortified Milk and Bing Bong alike, which is no help deciding what
-    /// the hint should say.
-    /// </summary>
     private static string Behaviours(ItemCooking cooking)
     {
         if (cooking.additionalCookingBehaviors == null || cooking.additionalCookingBehaviors.Length == 0)
@@ -286,7 +261,6 @@ internal static class ItemDebug
         return string.Join(", ", names);
     }
 
-    /// <summary>One affliction's type and the numbers on it, or "&lt;none&gt;".</summary>
     private static string Affliction(Peak.Afflictions.Affliction? affliction)
     {
         if (affliction == null)
@@ -333,7 +307,6 @@ internal static class ItemDebug
         return string.Join(", ", parts);
     }
 
-    /// <summary>A prefab the component instantiates, walked for what it holds.</summary>
     private static string Prefab(string label, GameObject? prefab)
     {
         if (prefab == null)
@@ -355,11 +328,7 @@ internal static class ItemDebug
         return tree.ToString();
     }
 
-    /// <summary>
-    /// Every effect-carrying component in the prefab at any depth, with its path and whether
-    /// its object is switched on. The tree above stops at four levels; the handlers do not,
-    /// and the stovetop's second and third emitters sat below where the tree could show them.
-    /// </summary>
+    /// <summary>Effect components at any depth, since the tree stops at four levels and the handlers do not.</summary>
     private static void DeepEffects(StringBuilder tree, GameObject prefab)
     {
         foreach (Component component in prefab.GetComponentsInChildren<Component>(true))
@@ -382,20 +351,14 @@ internal static class ItemDebug
         }
     }
 
-    /// <summary>
-    /// The status field a lit lantern or candle switches on, found the way DescribeLantern
-    /// finds it - so the dump shows exactly what that reader would see.
-    /// </summary>
+    /// <summary>Found the way DescribeLantern finds it, so the dump shows what that reader sees.</summary>
     private static string Field(GameObject item)
     {
         StatusField? field = item.GetComponentInChildren<StatusField>(true);
         return field == null ? " field=<none>" : $" field={field.name}" + PrefabValues(field);
     }
 
-    /// <summary>
-    /// What this map dealt the berry in hand, and the whole table behind it - a berry dealt 0
-    /// and a berry that is broken look identical from the bar alone.
-    /// </summary>
+    /// <summary>This map's dealt slot for the berry, and the whole table behind it.</summary>
     private static string Rolls(Action_RandomMushroomEffect effect)
     {
         MushroomManager? manager = MushroomManager.instance;
@@ -415,10 +378,6 @@ internal static class ItemDebug
             + $" stamAmts=[{string.Join(", ", manager.mushroomStamAmt ?? new int[0])}]";
     }
 
-    /// <summary>
-    /// What an Action_Spawn puts into the world; everything Sunscreen does is on the thing it
-    /// sprays, not on the bottle.
-    /// </summary>
     private static string Spawns(Action_Spawn action)
     {
         if (action.objectToSpawn == null)
@@ -439,10 +398,6 @@ internal static class ItemDebug
         return tree.ToString();
     }
 
-    /// <summary>
-    /// The subtree a breakable item turns into, with the numbers on it; everything a Remedy
-    /// Fungus does lives there rather than on the item in hand.
-    /// </summary>
     private static string BreaksInto(ShelfShroom shroom)
     {
         if (shroom.instantiateOnBreak == null)
@@ -455,14 +410,10 @@ internal static class ItemDebug
         return tree.ToString();
     }
 
-    /// <summary>How far down a break-prefab to walk before the particle systems take over.</summary>
+    /// <summary>Below this the particle systems take over.</summary>
     private const int MaxPrefabDepth = 4;
 
-    /// <summary>
-    /// Walks a prefab subtree, naming each child, **every** component on it, and the figures
-    /// on the ones that describe an effect. Every component, because a filtered list once hid
-    /// the very StatusField it was written to find.
-    /// </summary>
+    /// <summary>Every component on every child, not a filtered list: a filter hides what you did not expect.</summary>
     private static void Describe(StringBuilder tree, Transform parent, int depth)
     {
         if (depth == 0)
@@ -489,7 +440,6 @@ internal static class ItemDebug
         }
     }
 
-    /// <summary>The fields worth seeing on a component inside a spawned prefab.</summary>
     private static string PrefabValues(Component component) => component switch
     {
         AOE a => $" {a.statusType}={a.statusAmount} range={a.range} minFactor={a.minFactor}"

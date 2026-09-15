@@ -5,24 +5,16 @@ using STATUSTYPE = CharacterAfflictions.STATUSTYPE;
 namespace VeeItemInfo;
 
 /// <summary>
-/// When a change reaches the player - the first ordering key, and a property of the effect
-/// rather than a bucket a branch chooses. An effect that lands when a timer runs out is not a
+/// When a change reaches the player. An effect that lands when a timer runs out is not a
 /// third value: it is written onto the line that starts the timer, with an arrow.
 /// </summary>
 internal enum Onset
 {
-    /// <summary>Applied the moment the action runs.</summary>
     Instant,
-
-    /// <summary>Applied across a duration, or held for one.</summary>
     OverTime,
 }
 
-/// <summary>
-/// One rendered line, carrying everything <see cref="EffectOrder"/> needs to place it.
-/// Branches say what they mean - when it lands, which status it touches, which way it moves -
-/// and never where it goes.
-/// </summary>
+/// <summary>One rendered line, with the keys <see cref="EffectOrder"/> places it by.</summary>
 internal readonly struct EffectLine
 {
     internal EffectLine(string text, Onset onset, string status = "", float amount = 0f,
@@ -36,35 +28,20 @@ internal readonly struct EffectLine
         Clears = clears;
     }
 
-    /// <summary>The finished rich-text line.</summary>
     internal string Text { get; }
 
     internal Onset Onset { get; }
 
-    /// <summary>
-    /// The status this line is about, keyed as <see cref="EffectColors"/> and
-    /// <see cref="StatusIcons"/> key theirs. Empty where a line belongs to no one status -
-    /// a Shroomberry's roll marker, a sunscreen's bare duration.
-    /// </summary>
+    /// <summary>Keyed as <see cref="EffectColors"/> keys; empty for a line about no one status.</summary>
     internal string Status { get; }
 
-    /// <summary>
-    /// Signed, so that a removal can be told from an addition. Only the sign is read, and
-    /// only to break a tie between two lines about the same status.
-    /// </summary>
+    /// <summary>Only the sign is read, to tell a removal from an addition.</summary>
     internal float Amount { get; }
 
-    /// <summary>
-    /// Index of the component that produced the line. The last tiebreak, so that two
-    /// otherwise identical lines never trade places between frames.
-    /// </summary>
+    /// <summary>Index of the component that produced the line.</summary>
     internal int Source { get; }
 
-    /// <summary>
-    /// True for a clear-all line, which drives its status to zero rather than nudging it.
-    /// That absoluteness is what lets <see cref="EffectOrder"/> drop the line when something
-    /// else already takes the same status down.
-    /// </summary>
+    /// <summary>A clear-all line, which can be dropped when something else removes the same status.</summary>
     internal bool Clears { get; }
 
     internal EffectLine WithSource(int source) => new(Text, Onset, Status, Amount, source, Clears);
@@ -73,17 +50,13 @@ internal readonly struct EffectLine
 /// <summary>
 /// The one place that decides what order effect lines read in: petrify last, then
 /// <see cref="Onset"/>, then status by the curated order below, then the component the line
-/// came from - which for two changes to one status is the order the game applies them. The
-/// reasons for each key, and the fourth key that was dropped, are in docs/design.md,
-/// "Ordering effects".
+/// came from. The reasons are in docs/design.md, "Ordering effects".
 /// </summary>
 internal static class EffectOrder
 {
     /// <summary>
-    /// Status order, curated for reading. The names come from <see cref="STATUSTYPE"/> rather
-    /// than being spelled out, so a member the game renames or drops breaks the build here
-    /// instead of silently sorting last. The mod's own keys - Shield, Numb, Float - have no
-    /// STATUSTYPE and are named as the rest of the mod names them.
+    /// Names come from <see cref="STATUSTYPE"/> rather than being spelled out, so a member
+    /// the game renames breaks the build instead of silently sorting last.
     /// </summary>
     private static readonly string[] Order =
     {
@@ -121,11 +94,7 @@ internal static class EffectOrder
         return ranks;
     }
 
-    /// <summary>
-    /// Where a status sorts. Anything unranked - including the empty key a line with no
-    /// status carries - trails the rest rather than throwing, the same forgiving rule
-    /// <see cref="EffectColors.Get"/> follows.
-    /// </summary>
+    /// <summary>Anything unranked, including the empty key, trails the rest rather than throwing.</summary>
     internal static int Rank(string status) =>
         Ranks.TryGetValue(status, out int rank) ? rank : Order.Length;
 
@@ -133,11 +102,8 @@ internal static class EffectOrder
     {
         DropRedundantClears(lines);
 
-        // Where each line started is the last tiebreak, because Source is not the total key
-        // it was taken for: one component can add several lines, and List.Sort is unstable,
-        // so two lines from the same branch are free to swap between frames. Dynamite is the
-        // case that made it visible - a held-injury line and a blast line, both instant, both
-        // Injury, both additions, both from the Dynamite component.
+        // Original position is the last tiebreak: one component can add several lines, and
+        // List.Sort is unstable.
         List<(EffectLine Line, int Index)> indexed = new(lines.Count);
         for (int i = 0; i < lines.Count; i++)
         {
@@ -158,9 +124,7 @@ internal static class EffectOrder
 
     /// <summary>
     /// Drops a clear-all's line for any status something else already removes at the same
-    /// onset (Napberry: -100 hunger, and a clear-all). Only a clear is ever dropped, and only
-    /// against a removal: two ordinary removals genuinely stack, and a clear against an
-    /// addition is kept on purpose.
+    /// onset. Only a clear, and only against a removal: ordinary removals stack.
     /// </summary>
     private static void DropRedundantClears(List<EffectLine> lines)
     {
@@ -179,13 +143,11 @@ internal static class EffectOrder
         }
     }
 
-    /// <summary>Identifies the one statement a line makes: this status, at this onset.</summary>
     private static string Key(EffectLine line) => line.Onset + "|" + line.Status;
 
     private static int Compare(EffectLine a, EffectLine b)
     {
-        // Petrify last, whatever its onset: it is a price rather than an effect, and the only
-        // override of the keys below.
+        // Petrify last, whatever its onset: a price rather than an effect.
         int byPetrify = IsPrice(a).CompareTo(IsPrice(b));
         if (byPetrify != 0)
         {
@@ -205,15 +167,10 @@ internal static class EffectOrder
         }
 
         // Two changes to the same status at the same moment read in the order the game applies
-        // them, which is the order their components sit on the item. Not "removals first" -
-        // that was a guess at this, and the Book of Bones proved it wrong.
+        // them, which is the order their components sit on the item.
         return a.Source.CompareTo(b.Source);
     }
 
-    /// <summary>
-    /// Whether a line is what the item costs rather than what it does. Only petrify, and
-    /// only ever sorted after everything else.
-    /// </summary>
     private static int IsPrice(EffectLine line) =>
         line.Status == STATUSTYPE.Petrify.ToString() ? 1 : 0;
 }

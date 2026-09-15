@@ -9,11 +9,7 @@ namespace VeeItemInfo;
 
 /// <summary>
 /// The showcase: one HTML page of cards, each the overlay as it draws in game with the
-/// item's picture and name under it. Generated from the real
-/// <see cref="ItemDescriptionBuilder.Build"/>, so it can never disagree with the overlay - and
-/// so it is not a specification. No artwork lives in the repository: every icon is hotlinked
-/// from peak.wiki.gg, and a tinted sprite is recoloured with an SVG filter because a browser
-/// refuses a cross-origin image as a CSS mask. See docs/internals_infra.md, "The showcase".
+/// item's wiki picture and name under it. See docs/internals_infra.md, "The showcase".
 /// </summary>
 internal static class PreviewPage
 {
@@ -28,7 +24,7 @@ internal static class PreviewPage
 
         internal Item Item { get; }
 
-        /// <summary>The overlay's rich text, or null where Build threw.</summary>
+        /// <summary>Null where Build threw.</summary>
         internal string? Built { get; }
 
         internal string? Error { get; }
@@ -37,15 +33,7 @@ internal static class PreviewPage
     private const string Thumb = "https://peak.wiki.gg/images/thumb/{0}.png/64px-{0}.png";
     private const string Wiki = "https://peak.wiki.gg/wiki/";
 
-    /// <summary>
-    /// Wiki file names for every sprite the overlay can emit. Statuses first - the wiki keeps
-    /// them under Status_*, with two names that differ from the game's (Extra Stamina is
-    /// "Bonus stamina" there, Shield is "Invincibility") - then the item icons the overlay
-    /// borrows for the rope pair, the balloons and the generic item glyph.
-    ///
-    /// Whether a sprite is tinted is not decided here: the sprite tag carries tint=0 or 1,
-    /// set by StatusIcons.ShouldTint from the texture, and the page follows the tag.
-    /// </summary>
+    /// <summary>Wiki file names for every sprite the overlay can emit.</summary>
     private static readonly Dictionary<string, string> Files = new()
     {
         { "Hunger", "Status_Hunger" },
@@ -75,17 +63,10 @@ internal static class PreviewPage
         { "FloatBunch", "Balloon_Bunch" },
     };
 
-    /// <summary>
-    /// The wiki has no campfire status icon - the mod scrapes the real one off the stamina
-    /// bar at runtime - and a stovetop item icon standing in for it read as an item rather
-    /// than as "fire". An emoji says it and costs no request.
-    /// </summary>
+    /// <summary>The wiki has no campfire status icon.</summary>
     private const string CookEmoji = "🔥";
 
-    /// <summary>
-    /// The three things the overlay's rich text is made of: a colour open, a colour close,
-    /// and a sprite. Everything between them is plain text.
-    /// </summary>
+    /// <summary>A colour open, a colour close, or a sprite; everything between is plain text.</summary>
     private static readonly Regex Tag = new(
         "<#([0-9A-Fa-f]{6})>|</color>|<sprite name=\"([^\"]+)\" tint=(\\d)>", RegexOptions.Compiled);
 
@@ -94,8 +75,7 @@ internal static class PreviewPage
 
     internal static string Render(List<Row> rows)
     {
-        // One card per distinct (name, overlay): fifteen Torn Pages and twenty chess pieces
-        // say the same thing, and the card notes how many prefabs it stands for.
+        // One card per distinct (name, overlay), noting how many prefabs it stands for.
         List<Card> cards = Collapse(rows);
         cards.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
 
@@ -198,10 +178,8 @@ internal static class PreviewPage
     }
 
     /// <summary>
-    /// The overlay's TMP rich text as HTML. Colour tags become spans, sprites become wiki
-    /// icons, newlines become breaks and everything else is escaped text. Every colour a
-    /// tinted sprite sits in is added to <paramref name="tints"/> so the page can define
-    /// its filter.
+    /// Colour tags become spans, sprites become wiki icons. Every colour a tinted sprite sits
+    /// in is added to <paramref name="tints"/> so the page can define its filter.
     /// </summary>
     internal static string ToHtml(string richText, HashSet<string> tints)
     {
@@ -244,12 +222,7 @@ internal static class PreviewPage
         html.Append(Escape(text).Replace("\n", "<br>"));
     }
 
-    /// <summary>
-    /// One sprite. A tinted one is the wiki's white silhouette recoloured by the filter for
-    /// the colour it sits in, exactly as the game's tint=1 sprite takes the text colour; an
-    /// untinted one is the wiki's image as it is. A key with no wiki file is shown as its
-    /// name, so a gap in the table above is visible rather than blank.
-    /// </summary>
+    /// <summary>A key with no wiki file is shown as its name, so a gap in the table is visible.</summary>
     private static string Icon(string name, bool tinted, string colour, HashSet<string> tints)
     {
         if (name == "Cook")
@@ -274,14 +247,8 @@ internal static class PreviewPage
     }
 
     /// <summary>
-    /// The name a player knows the item by, in the case the wiki files it under.
-    ///
-    /// GetName is the game's localisation and always has the right words, but in the HUD's
-    /// upper case - "GRANOLA BAR" - and wiki file names are case-sensitive. UIData.itemName
-    /// was tried first and is worse: it is the localisation key's source and is a key for
-    /// some items ("AMULET_CLONE", "VOIDLAUNCHER") and lower case for others. So the
-    /// localised name is title-cased, with the small words the wiki keeps lower - "Bugle of
-    /// Friendship", "The Book of Bones" - left alone.
+    /// The name a player knows the item by, in the case the wiki files it under: the localised
+    /// name (HUD upper case) title-cased. UIData.itemName is a raw key for some items.
     /// </summary>
     private static string DisplayName(Item item)
     {
@@ -302,16 +269,12 @@ internal static class PreviewPage
                 : item.gameObject.name;
         }
 
-        // Two amulets are spelled with a typographic apostrophe in the game; the wiki uses a
-        // straight one everywhere, and TextInfo would capitalise the letter after a curly one.
+        // The wiki uses straight apostrophes, and TextInfo would capitalise after a curly one.
         string cased = TitleCase(name!.Replace('’', '\''));
         return WikiAliases.TryGetValue(cased, out string? alias) ? alias : cased;
     }
 
-    /// <summary>
-    /// The few real items the wiki files under a different name from the game's own. Props,
-    /// guidebook pages and unlocalised leftovers are not here - they have no page to find.
-    /// </summary>
+    /// <summary>Real items the wiki files under a different name from the game's own.</summary>
     private static readonly Dictionary<string, string> WikiAliases = new(StringComparer.Ordinal)
     {
         { "Coconut Half", "Half-Coconut" },
@@ -323,11 +286,7 @@ internal static class PreviewPage
         "of", "the", "and", "a", "an", "in", "on", "to",
     };
 
-    /// <summary>
-    /// "SCOUT'S INITIATIVE" to "Scout's Initiative", "BUGLE OF FRIENDSHIP" to "Bugle of
-    /// Friendship". TextInfo handles apostrophes and hyphens; the small-word rule is ours,
-    /// and never applies to the first word.
-    /// </summary>
+    /// <summary>"BUGLE OF FRIENDSHIP" to "Bugle of Friendship"; small words stay lower except first.</summary>
     private static string TitleCase(string upper)
     {
         string[] words = System.Globalization.CultureInfo.InvariantCulture.TextInfo

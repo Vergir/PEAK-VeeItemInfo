@@ -4,10 +4,8 @@ using UnityEngine;
 namespace VeeItemInfo;
 
 /// <summary>
-/// Owns the TextMeshPro object the description is drawn into, and keeps it sitting above
-/// whichever inventory slot holds the item being described. Parented to the HUD canvas, which
-/// neither positions nor clips it, and measuring the slot each frame; four other placements
-/// failed and are listed in docs/internals_infra.md, "Overlay placement".
+/// Owns the TextMeshPro object the description is drawn into, and keeps it above the
+/// inventory slot holding the item. See docs/internals_infra.md, "Overlay placement".
 /// </summary>
 internal static class Overlay
 {
@@ -24,10 +22,8 @@ internal static class Overlay
     private static readonly Vector3[] CornerBuffer = new Vector3[4];
 
     /// <summary>
-    /// Builds the overlay if it doesn't exist yet, and reports whether it's usable.
-    /// Normally the GUIManager.Start hook gets here first; this covers the case where
-    /// the HUD is torn down and rebuilt (returning to the menu and starting a new run),
-    /// which leaves the old references Unity-null.
+    /// Covers the HUD being torn down and rebuilt (a new run), which leaves the references
+    /// Unity-null after the GUIManager.Start hook has already fired.
     /// </summary>
     internal static bool EnsureCreated()
     {
@@ -36,8 +32,7 @@ internal static class Overlay
             return true;
         }
 
-        // Create() searches the scene by name, so a failed attempt must not repeat on the
-        // next frame - that turns a missing HUD into a per-frame scene scan.
+        // Create() is a scene lookup, so a failed attempt must not repeat every frame.
         if (Time.unscaledTime < nextCreateAttempt)
         {
             return false;
@@ -50,8 +45,6 @@ internal static class Overlay
 
     internal static void Create()
     {
-        // The singleton and its canvas, not a scene path and a child name: a rename breaks
-        // this build instead of quietly finding nothing.
         guiManager = GUIManager.instance;
         if (guiManager == null)
         {
@@ -82,10 +75,7 @@ internal static class Overlay
         ApplyStyle();
     }
 
-    /// <summary>
-    /// Pushes the current config values onto the overlay. Safe to call at any time,
-    /// including before the overlay exists, so config changes can be applied live.
-    /// </summary>
+    /// <summary>Safe to call before the overlay exists, so config changes can be applied live.</summary>
     internal static void ApplyStyle()
     {
         if (textMesh == null || rect == null)
@@ -111,11 +101,7 @@ internal static class Overlay
         UpdatePosition();
     }
 
-    /// <summary>
-    /// Centres the overlay above the slot holding <paramref name="item"/>. Cheap enough to
-    /// run every frame, which keeps it correct as the selected slot changes and through
-    /// resolution and aspect ratio changes.
-    /// </summary>
+    /// <summary>Centres the overlay above the slot holding <paramref name="item"/>; runs every frame.</summary>
     internal static void UpdatePosition(Item? item = null)
     {
         if (item != null)
@@ -147,9 +133,8 @@ internal static class Overlay
     }
 
     /// <summary>
-    /// Finds the top-centre of the inventory slot showing the tracked item, in HUD-local
-    /// space. The temporary slot is checked first: when the inventory is full and you pick
-    /// something up, it appears there, to the left of the numbered slots.
+    /// The top-centre of the slot showing the tracked item, in HUD-local space. The temporary
+    /// slot (a pickup with a full inventory) is checked first.
     /// </summary>
     private static bool TryGetSlotTopCentre(out Vector2 topCentre)
     {
@@ -187,7 +172,6 @@ internal static class Overlay
         return true;
     }
 
-    /// <summary>Returns the slot's rect if it is on screen and holding this exact item.</summary>
     private static RectTransform? MatchSlot(InventoryItemUI? slot, ItemInstanceData data)
     {
         if (slot == null || !slot.gameObject.activeInHierarchy || slot.rectTransform == null)
@@ -198,10 +182,7 @@ internal static class Overlay
         return ReferenceEquals(slot._itemData, data) ? slot.rectTransform : null;
     }
 
-    /// <summary>
-    /// Attaches the status icon sprite asset once the status bar exists. The bar is not
-    /// necessarily built when the HUD is, so this keeps trying until it succeeds.
-    /// </summary>
+    /// <summary>Attaches the sprite asset once the status bar exists, which may be after the HUD.</summary>
     internal static void EnsureIcons()
     {
         if (textMesh == null)
@@ -209,11 +190,7 @@ internal static class Overlay
             return;
         }
 
-        // Dying or starting a new run rebuilds the HUD, which gives us a fresh text mesh
-        // and can destroy the generated atlas. Both cases have to be caught: the mapping
-        // can still look populated while its Unity objects are gone, and a new text mesh
-        // has no sprite asset assigned even when the old one is perfectly alive. Either
-        // way TMP falls back to its own sprite set and every icon renders as a "?".
+        // A HUD rebuild can destroy the atlas while the mapping still looks populated.
         if (StatusIcons.Available && !StatusIcons.IsValid)
         {
             StatusIcons.Invalidate();
@@ -227,13 +204,13 @@ internal static class Overlay
 
         StatusIcons.EnsureBuilt();
 
+        // A HUD rebuild also gives a fresh text mesh with no sprite asset assigned.
         if (StatusIcons.SpriteAsset != null && textMesh.spriteAsset != StatusIcons.SpriteAsset)
         {
             textMesh.spriteAsset = StatusIcons.SpriteAsset;
 
-            // The text has to be built again, not just re-pointed at the new asset: a
-            // description assembled before the atlas existed holds the word HUNGER, not a
-            // sprite tag. Icons also change the line metrics, so the cached height is stale.
+            // Rebuild the text, not just re-point it: a description assembled before the atlas
+            // existed holds the word HUNGER, not a sprite tag.
             lastText = "";
             ItemInfoController.MarkDirty();
         }
@@ -251,11 +228,7 @@ internal static class Overlay
         Remeasure();
     }
 
-    /// <summary>
-    /// Recomputes the box height from the current text. Rebuilding the mesh is expensive,
-    /// so this runs only when the text or the styling actually changes - never per frame.
-    /// The measured height is what makes Offset Y a true bottom edge.
-    /// </summary>
+    /// <summary>Expensive; only when the text or the styling changes, never per frame.</summary>
     private static void Remeasure()
     {
         if (textMesh == null || rect == null)
@@ -276,11 +249,7 @@ internal static class Overlay
         }
     }
 
-    /// <summary>
-    /// Tears the overlay out of the HUD and forgets everything. Needed for hot reloading:
-    /// the GameObject is parented to the game's own canvas, so it outlives our assembly
-    /// unless we remove it ourselves.
-    /// </summary>
+    /// <summary>For hot reloading: the GameObject sits on the game's canvas and would outlive the assembly.</summary>
     internal static void Destroy()
     {
         if (textMesh != null)
