@@ -41,10 +41,10 @@ internal static class CookingHint
     /// </summary>
     internal static string? Describe(GameObject item, ItemCooking? cooking)
     {
-        bool consumable = IsConsumable(item);
+        bool consumed = IsConsumed(item);
         if (cooking == null)
         {
-            return Ladder(item, consumable, next: 1);
+            return Ladder(item, consumed, next: 1);
         }
 
         if (!cooking.canBeCooked)
@@ -107,7 +107,7 @@ internal static class CookingHint
         }
 
         // The curse cure outranks the ladder; any other gain is the same "+" the ladder gives.
-        string? ladder = Ladder(item, consumable, next);
+        string? ladder = Ladder(item, consumed, next);
         if (improvement > 1)
         {
             return Good(improvement);
@@ -116,9 +116,9 @@ internal static class CookingHint
         return ladder ?? (improvement > 0 ? Good() : null);
     }
 
-    private static string? Ladder(GameObject item, bool consumable, int next)
+    private static string? Ladder(GameObject item, bool consumed, int next)
     {
-        if (!LadderApplies(item, consumable))
+        if (!LadderApplies(item, consumed))
         {
             return null;
         }
@@ -137,9 +137,9 @@ internal static class CookingHint
         return Bad();
     }
 
-    private static bool LadderApplies(GameObject item, bool consumable)
+    private static bool LadderApplies(GameObject item, bool consumed)
     {
-        if (consumable)
+        if (consumed)
         {
             return true;
         }
@@ -163,9 +163,21 @@ internal static class CookingHint
         return false;
     }
 
-    internal static bool IsConsumable(GameObject item) =>
+    /// <summary>
+    /// Whether the item is consumed, which is what makes its <c>OnConsumed</c> actions fire -
+    /// not whether you can eat it. Two items reach <c>Item.ConsumeDelayed</c> from their own
+    /// code instead of through a consume action, and the cooking ladder hands every item an
+    /// <c>OnConsumed</c> stamina action, so getting this wrong hides a real effect. The paths,
+    /// and the ones deliberately left out, are in docs/internals_game.md, "Cooking".
+    /// </summary>
+    internal static bool IsConsumed(GameObject item) =>
         item.GetComponent<Action_Consume>() != null
-        || item.GetComponent<Action_ConsumeAndSpawn>() != null;
+        || item.GetComponent<Action_ConsumeAndSpawn>() != null
+        // The Scroll consumes itself when it spawns its page.
+        || item.GetComponent<Action_SpawnGuidebookPage>() != null
+        // The Scout Statue consumes an amulet when it is inserted. Only the Strange Gem can be
+        // cooked; the other four carry canBeCooked=False and never reach the ladder.
+        || item.GetComponent<Peak.AmuletBase>() != null;
 
     /// <summary>0 where no action is currently off, 1 for one that is, 3 where it cures curse.</summary>
     private static int EnableStrength(CookingBehavior_EnableScripts enable)

@@ -35,7 +35,7 @@ internal static class ItemDescriptionBuilder
         Component[] itemComponents = itemGameObj.GetComponents(typeof(Component));
         DescriptionLayout layout = new();
 
-        bool consumable = CookingHint.IsConsumable(itemGameObj);
+        bool consumed = CookingHint.IsConsumed(itemGameObj);
 
         List<EffectLine> effects = new();
 
@@ -44,7 +44,7 @@ internal static class ItemDescriptionBuilder
         float weight = item.CarryWeight * GameValues.StatusStep;
         layout.Add(Block.Weight, EffectFormatter.Plain(weight, "Weight"));
 
-        Parts parts = new(layout, effects, item, consumable);
+        Parts parts = new(layout, effects, item, consumed);
 
         for (int i = 0; i < itemComponents.Length; i++)
         {
@@ -62,7 +62,7 @@ internal static class ItemDescriptionBuilder
 
             // An OnConsumed action never fires on an item nobody can eat, and cooking adds
             // such actions to anything.
-            if (!consumable && itemComponents[i] is ItemAction action && action.OnConsumed)
+            if (!consumed && itemComponents[i] is ItemAction action && action.OnConsumed)
             {
                 continue;
             }
@@ -169,13 +169,13 @@ internal static class ItemDescriptionBuilder
     private sealed class Parts
     {
         internal Parts(DescriptionLayout layout, List<EffectLine> effects, Item entity,
-            bool consumable)
+            bool consumed)
         {
             Layout = layout;
             Effects = effects;
             Entity = entity;
             Item = entity.gameObject;
-            Consumable = consumable;
+            Consumed = consumed;
         }
 
         internal Item Entity { get; }
@@ -186,7 +186,7 @@ internal static class ItemDescriptionBuilder
 
         internal GameObject Item { get; }
 
-        internal bool Consumable { get; }
+        internal bool Consumed { get; }
 
         /// <summary>Index of the component being described, for <see cref="EffectOrder"/>.</summary>
         internal int Source { get; set; }
@@ -638,7 +638,7 @@ internal static class ItemDescriptionBuilder
         // Only the non-item spawns, and only where throwing is the item's use - an Antidote
         // shatters into its cloud too, but an Antidote is for drinking.
         Breakable breakable = (Breakable)component;
-        if (breakable.instantiateNonItemOnBreak == null || parts.Consumable
+        if (breakable.instantiateNonItemOnBreak == null || parts.Consumed
             || parts.Item.GetComponent<Action_ReduceUses>() != null)
         {
             return;

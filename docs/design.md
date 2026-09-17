@@ -200,6 +200,11 @@ are worth reading.
   affliction, which is re-applied every tenth of a second and so is infinite while the horn
   sounds; its reach is shown instead.
 - The Scorpion's instant 2.5 poison, folded into the range rather than a line of its own.
+- The +10 stamina a **cooked Ritual Dagger** adds. The dagger's `+100 {stamina}` is what
+  everyone but the victim receives; the cooked extra reaches only whoever holds it. Shown, the
+  two would fold into a single `+110` that is true for one person and wrong for everybody else -
+  and this would be the one item stating both audiences at once, which no item does. Ten points
+  on a hundred is not worth breaking that for.
 - A thrown item's shatter effect on an item that is for drinking: an Antidote breaks into its
   cloud too, and listing the cloud beside the drink reads as the same cure twice at two
   strengths. Only an item with no consume action and no uses has nothing else to do but be

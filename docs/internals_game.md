@@ -389,9 +389,25 @@ advertise poison it no longer inflicts. Skip disabled components everywhere.
 
 `ignoreDefaultCookBehavior` opts an item out of the ladder entirely.
 
-**An action flagged `OnConsumed` only fires when the item is eaten**, so it means nothing on an
-item with no `Action_Consume` or `Action_ConsumeAndSpawn`. Because the ladder adds a stamina
-action to anything, a cooked Scout's Ambition carries +10 stamina it can never hand out.
+**An action flagged `OnConsumed` fires when the item is consumed - which is not the same as
+being eaten.** `Item.ConsumeDelayed` runs the whole `OnConsumed` chain, and six things call it:
+`Action_Consume` and `Action_ConsumeAndSpawn`; `Action_SpawnGuidebookPage`, so the Scroll
+consumes itself when it spawns its page; `ScoutStatue.Interact_CastFinished`, which consumes an
+amulet as it is inserted; `RitualDaggerFeedBehavior.FeederAction`; and `Action_ReduceUses` where
+`consumeOnFullyUsed` is set, on the last use.
+
+This matters because the ladder hands an `OnConsumed` stamina action to **anything**, so an item
+read as un-consumable hides a real +10. Which items it actually reaches is narrow: the ladder
+needs `canBeCooked`, no wreck, no cooking explosion and `ignoreDefaultCookBehavior` off, and an
+item that already carries a non-`OnConsumed` hunger or stamina action shows the gain anyway. What
+survives is the **Scroll** and the **Strange Gem** - the one cookable amulet, the other four
+carrying `canBeCooked=False`. The Ritual Dagger qualifies too and is left out on purpose; see
+[design.md](design.md), "What is deliberately not shown". The remaining candidates - Warp
+Compass, Cheat Compass, the auto-parachute - are dead content.
+
+`Action_Guidebook` only toggles the guidebook UI, so the fifteen guidebook pages are not
+consumed; only the Scroll's `Action_SpawnGuidebookPage` is. The Book of Bones carries
+`consumeOnFullyUsed=False` and is never consumed at all.
 
 ---
 

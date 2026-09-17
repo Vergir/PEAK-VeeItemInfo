@@ -64,8 +64,12 @@ logging is gated behind one config check.
 **`Build` walks every component on the item** and skips three kinds: a null entry (a missing
 script serializes as one, and Stone ships one), a disabled `Behaviour` (cooking switches
 actions off rather than removing them), and an `ItemAction` flagged `OnConsumed` on an item
-nobody can eat (cooking adds such actions to anything). One test each, here, rather than in
-whichever handlers happen to need it.
+that is never consumed (cooking adds such actions to anything). One test each, here, rather
+than in whichever handlers happen to need it.
+
+`CookingHint.IsConsumed` answers that last one, and it asks which components consume the item
+rather than whether it can be eaten: reading a Scroll as un-consumable hid a real +10 stamina.
+The paths are in [internals_game.md](internals_game.md), "Cooking".
 
 **Components are dispatched by a type lookup that walks to the base**, never by a chain of
 tests. `ItemDescriptionBuilder.Handlers` maps a component type to the method that describes
@@ -81,7 +85,7 @@ the table: the cooking hint is decided in `Build` after every handler has run, f
 `ItemCooking` only. `EffectFormatter.AfflictionHandlers` is the same shape for afflictions.
 
 **A handler says what it means, never where its line goes.** Every handler receives a `Parts`:
-the layout, the effect-line list, the item, whether it is consumable, and the index of the
+the layout, the effect-line list, the item, whether it is consumed, and the index of the
 component being described. Custom, Cooking and Weight lines go straight to the layout. Effect
 lines are collected as `EffectLine`s carrying the finished text plus the keys that place them
 - `Onset` (instant or over time), the status, the signed amount, the source component index,
