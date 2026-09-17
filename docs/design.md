@@ -146,6 +146,25 @@ effect - the amulets charge it for what they just did - so it reads as a footnot
 above. This is the single override of the keys; without it the healing amulet's petrify cost
 would sort above the shield it buys.
 
+**Two lines saying the same thing about one status are added up.** A cooked Sports Drink
+carries two `Action_GiveExtraStamina`, 30 and 15, and hands out both in one swig; `+30` above
+`+15` makes the reader do the arithmetic the overlay exists to save them. It reads `+45`.
+
+Four conditions, each of which is a case that must not fold:
+
+- **The same status at the same onset**, which after ordering means the two lines are already
+  neighbours. An instant figure and an over-time one are different statements.
+- **The same direction.** The Book of Bones' `Curse +50` then `Curse -25` nets +25 from an
+  empty bar but not from a nearly full one, because the status clamps at both ends - the net
+  of an opposed pair depends on where the player started, so it has no single figure. Two
+  additions have one.
+- **Nothing in either line but the figure and its icon.** A duration, a reach, an arrow or a
+  range says something the sum would swallow, so those never fold. This is asked of the
+  rendered line rather than tracked alongside it, so a form that grows a suffix later stops
+  folding without anyone having to remember.
+- **Neither is a clear-all.** Two components that each wipe a status wipe it once; `-200`
+  would be twice a bar for something that happens once.
+
 **A clear-all line is dropped where something else already removes that status.** Napberry
 restores 100 hunger *and* clears all status, which would be two lines both reading
 `-100 {hunger}`. Only a clear is ever dropped, and only against another removal: two ordinary

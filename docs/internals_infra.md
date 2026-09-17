@@ -94,7 +94,13 @@ the build rather than sorting last); source component index; and finally the lin
 position, because one component can add several lines and `List.Sort` is unstable -
 Dynamite's held-injury and blast lines are identical on every other key. Before sorting,
 `DropRedundantClears` removes a clear-all line for any status something else already removes
-at the same onset. The reasons for each key are in [design.md](design.md).
+at the same onset. After sorting, `MergeRepeats` walks the neighbours it has just made
+adjacent and adds up any like-signed pair whose whole text is `Token(amount, status)` -
+re-rendered from the new total, so `EffectFormatter` still chooses the form. `IsPlainToken`
+compares the line's rendered text rather than reading a flag set when it was built: a form
+that later grows a duration or a reach stops folding on its own, with nothing to keep in
+sync. The reasons for each key, and for each thing the fold refuses, are in
+[design.md](design.md).
 
 **`DescriptionLayout`** owns sections and separators. Handlers call `Add(Block, text)`; the
 layout ignores empty text and any section the player has switched off, trims surrounding

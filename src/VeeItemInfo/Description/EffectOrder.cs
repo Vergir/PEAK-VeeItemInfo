@@ -120,7 +120,56 @@ internal static class EffectOrder
         {
             lines[i] = indexed[i].Line;
         }
+
+        MergeRepeats(lines);
     }
+
+    /// <summary>
+    /// Adds up neighbouring lines that say the same thing about one status, so a cooked Sports
+    /// Drink reads "+45" rather than "+30" above "+15". Run after the sort, where two such
+    /// lines are already adjacent.
+    /// </summary>
+    private static void MergeRepeats(List<EffectLine> lines)
+    {
+        for (int i = lines.Count - 2; i >= 0; i--)
+        {
+            if (!CanMerge(lines[i], lines[i + 1]))
+            {
+                continue;
+            }
+
+            EffectLine first = lines[i];
+            float total = first.Amount + lines[i + 1].Amount;
+            lines[i] = new EffectLine(EffectFormatter.Token(total, first.Status),
+                first.Onset, first.Status, total, first.Source);
+            lines.RemoveAt(i + 1);
+        }
+    }
+
+    /// <summary>
+    /// Same status, same moment, same direction, and nothing in either line but the figure. The
+    /// exclusions carry the reasoning; docs/design.md, "Ordering effects", has the why.
+    /// </summary>
+    private static bool CanMerge(EffectLine a, EffectLine b) =>
+        a.Status.Length > 0
+        && a.Status == b.Status
+        && a.Onset == b.Onset
+        // Opposite signs are the Book of Bones' +50 then -25, where a status clamped at either
+        // end makes the net depend on where you started. Only a like-signed pair is safe.
+        && (a.Amount > 0f) == (b.Amount > 0f)
+        // Two clear-alls are two full bars removed once, not twice.
+        && !a.Clears
+        && !b.Clears
+        && IsPlainToken(a)
+        && IsPlainToken(b);
+
+    /// <summary>
+    /// Whether the whole line is its figure and icon, and so can be rebuilt from a new total.
+    /// Asked of the rendered text rather than tracked as a flag, so a line that grows a
+    /// duration, a reach or an arrow stops folding without anyone remembering to say so.
+    /// </summary>
+    private static bool IsPlainToken(EffectLine line) =>
+        line.Amount != 0f && line.Text == EffectFormatter.Token(line.Amount, line.Status);
 
     /// <summary>
     /// Drops a clear-all's line for any status something else already removes at the same
