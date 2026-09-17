@@ -403,8 +403,9 @@ on its own.
 - A sprite key with no wiki file is shown as its name, so a gap in the table is visible.
 
 Regenerating it: Debug Logging on, hold an item, copy `BepInEx/VeeItemInfo-showcase.html` over
-`docs/showcase.html`. Where it renders for readers is an open publishing decision (GitHub
-Pages, or a raw-HTML previewer).
+`docs/showcase.html`. It renders for readers through GitHub Pages, served from `docs/` on
+`master` at <https://vergir.github.io/PEAK-VeeItemInfo/showcase.html>, which is what both
+READMEs link. A link to the file in the repository would show its source, not the page.
 
 ---
 

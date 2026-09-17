@@ -231,10 +231,14 @@ Config.Build.user.props
 AGENTS.md
 BACKLOG.md
 
-# The item spec IS tracked - it is a reference for people who have not installed the
-# mod. It carries no artwork of its own: every icon is hotlinked from peak.wiki.gg, so
-# nothing of PEAK's belongs to this repository. Never commit an icons/ directory here.
+# The showcase IS tracked - it is a reference for people who have not installed the mod.
+# It carries no artwork of its own: every icon is hotlinked from peak.wiki.gg, so no
+# sprite sheet of PEAK's belongs to this repository. Never commit an icons/ directory.
 docs/icons/
+
+# docs/screenshots/ IS tracked, and is not an exception to the rule above: those are
+# pictures OF the mod running, which the package page needs, not PEAK's art assets
+# extracted and redistributed.
 
 # Python bytecode from the spec generator
 __pycache__/
