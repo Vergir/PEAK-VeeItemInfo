@@ -4,8 +4,8 @@ namespace VeeItemInfo;
 
 /// <summary>
 /// What an explosion actually delivers to the person who set it off: the AOE's amount scaled
-/// by distance to the torso, then floored to whole status steps. See docs/internals_game.md,
-/// "Blasts, fields and emitters".
+/// by distance to the torso, then floored to whole status steps - and the reach of the area
+/// effects that are not AOEs. See docs/internals_game.md, "Blasts, fields and emitters".
 /// </summary>
 internal static class Blast
 {
@@ -17,6 +17,35 @@ internal static class Blast
 
     /// <summary>Whether a radius measured from the character's centre can be entered on foot.</summary>
     internal static bool Reachable(float radius) => radius > PointBlankDistance;
+
+    /// <summary>
+    /// The reach of an antigravity bubble in Unity units, or 0 where the prefab is not one.
+    /// The bubble grows after it spawns, so the figure worth printing is the trigger's own
+    /// radius at the scale <c>GrowOverTime</c> settles on - the collider as authored is the
+    /// size it starts at, which would understate it.
+    /// </summary>
+    internal static float AntiSphereRadius(GameObject? prefab)
+    {
+        if (prefab == null)
+        {
+            return 0f;
+        }
+
+        Peak.AntiSphere? sphere = prefab.GetComponentInChildren<Peak.AntiSphere>(includeInactive: true);
+        if (sphere == null)
+        {
+            return 0f;
+        }
+
+        SphereCollider? trigger = sphere.coll != null ? sphere.coll : sphere.GetComponent<SphereCollider>();
+        if (trigger == null || trigger.radius <= 0f)
+        {
+            return 0f;
+        }
+
+        Peak.GrowOverTime? grow = sphere.GetComponent<Peak.GrowOverTime>();
+        return trigger.radius * (grow != null && grow.endScale > 0f ? grow.endScale : 1f);
+    }
 
     /// <summary>
     /// Not for Petrify: <paramref name="amount"/> is assumed to be a 0-1 fraction, and petrify

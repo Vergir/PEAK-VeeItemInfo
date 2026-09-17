@@ -29,7 +29,8 @@ In reading order, each hideable from config, separated by a blank line that can 
 off:
 
 - **Custom** - facts that are not the result of using the item: how far a rope reaches, how
-  long a stovetop burns, what an item costs or grants while merely held.
+  long a stovetop burns, how wide a bubble the Anti-Zooka blows, what an item costs or grants
+  while merely held.
 - **Effects** - every status change, whether it lands on you or on everyone nearby. The
   distinction is carried by the item, not the layout; no item states both.
 - **Cooking** - what one more turn on the fire does.
@@ -186,6 +187,10 @@ are worth reading.
   in the lines around it: the Book of Bones' gated curse renders for a human because this
   toggles first.
 - The Cactus's throw-charge threshold.
+- `CookingBehavior_SummonScoutmaster` - cooking Scout's Honor calls the Scoutmaster. There is no
+  glyph for him, and this is the one omission where the missing fact is a danger rather than a
+  detail, so it is the first candidate if a symbol ever appears. The line still shows the
+  antigravity bubble the same cook produces, so the item does not read as inert.
 - Passives with nothing to draw: Parasol, Balloon and its bunch, Glider, Jetpack, Backpack
   slot counts (the HUD has no slot icon to scrape, so a bare number would say nothing).
 

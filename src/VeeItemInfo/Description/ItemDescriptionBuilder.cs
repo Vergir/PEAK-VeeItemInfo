@@ -125,6 +125,7 @@ internal static class ItemDescriptionBuilder
         { typeof(Constructable), DescribeConstructable },
         { typeof(RopeShooter), DescribeRopeShooter },
         { typeof(VineShooter), DescribeVineShooter },
+        { typeof(Peak.Action_RaycastSpawnSomething), DescribeRaycastSpawnSomething },
         { typeof(MagicBean), DescribeMagicBean },
         { typeof(ShelfShroom), DescribeShelfShroom },
         { typeof(Breakable), DescribeBreakable },
@@ -617,6 +618,23 @@ internal static class ItemDescriptionBuilder
     {
         VineShooter effect = (VineShooter)component;
         parts.Layout.Add(Block.Custom, ReachInUnits(effect.maxLength));
+    }
+    private static void DescribeRaycastSpawnSomething(Component component, Parts parts)
+    {
+        // The Anti-Zooka fires an antigravity bubble; the reach worth stating is how big the
+        // bubble is, not how far the shot carries. Nothing else spawns this way, and a prefab
+        // that is not a bubble says nothing rather than guessing at a size.
+        Peak.Action_RaycastSpawnSomething effect = (Peak.Action_RaycastSpawnSomething)component;
+        if (effect.prefabToSpawn == null)
+        {
+            return;
+        }
+
+        float radius = Blast.AntiSphereRadius(effect.prefabToSpawn);
+        if (radius > 0f)
+        {
+            parts.Layout.Add(Block.Custom, ReachInUnits(radius));
+        }
     }
     private static void DescribeMagicBean(Component component, Parts parts)
     {

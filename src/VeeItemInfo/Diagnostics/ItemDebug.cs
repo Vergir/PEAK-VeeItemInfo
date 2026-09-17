@@ -160,6 +160,9 @@ internal static class ItemDebug
         Action_ApplyAffliction a => $" affliction={Affliction(a.affliction)}"
             + $" extra=[{Afflictions(a.extraAfflictions)}]",
         Action_RaycastDart a => $" maxDistance={a.maxDistance} onHit=[{Afflictions(a.afflictionsOnHit)}]",
+        Peak.Action_RaycastSpawnSomething a => $" maxDistance={a.maxDistance}"
+            + $" bubbleRadius={Blast.AntiSphereRadius(a.prefabToSpawn)}u"
+            + Prefab(" spawns", a.prefabToSpawn),
         Action_MoraleBoost a => $" radius={a.boostRadius} baseline={a.baselineStaminaBoost}"
             + $" perScout={a.staminaBoostPerAdditionalScout}",
         Action_Numb a => $" numbAmount={a.numbAmount}",

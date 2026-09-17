@@ -234,7 +234,21 @@ internal static class CookingHint
         if (blast == null)
         {
             StatusField? field = prefab.GetComponentInChildren<StatusField>(includeInactive: true);
-            return field != null ? Explodes(field.radius) : Destroyed();
+            if (field != null)
+            {
+                return Explodes(field.radius);
+            }
+
+            // The Anti-Zooka and Scout's Honor become the antigravity bubble the launcher
+            // fires. Without this they read as "destroyed", which is the opposite message.
+            float bubble = Blast.AntiSphereRadius(prefab);
+            if (bubble > 0f)
+            {
+                return Explodes(bubble);
+            }
+
+            // Nothing in the prefab carries an effect: a balloon really does just pop.
+            return Destroyed();
         }
 
         return Explodes(blast.range, injury);

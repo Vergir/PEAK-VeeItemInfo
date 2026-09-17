@@ -280,8 +280,28 @@ walk includes inactive objects but skips an emitter whose *own* object is off.
 cooking explosion going off point-blank is the ordinary case: a stovetop advertising 20 injury
 gives 17.5. The blast radius is `AOE.range`, not a collider. Where the prefab holds no AOE that
 affects a character but does hold a `StatusField`, cooking makes a field you stand in rather
-than a blast; where it holds neither, the "explosion" is a puff with nothing in it and the
-item is simply gone (a balloon pops, a snowball melts).
+than a blast.
+
+**Where it holds neither, the effect may still be there under a third name.** The Anti-Zooka
+and Scout's Honor both cook into `AntiSphere_CookingExplosion`, whose effect is carried by
+`Peak.AntiSphere` - the antigravity bubble the launcher itself fires, which lifts characters and
+items and regenerates stamina inside it. Read as "no effect found" it fell through to the
+destroyed mark, which says the opposite of what happens. Its reach is the trigger
+`SphereCollider`'s radius times `Peak.GrowOverTime.endScale`, because the bubble is authored at
+the size it *starts* and grows to its final size after spawning.
+
+The same bubble is what the Anti-Zooka *fires*: `Peak.Action_RaycastSpawnSomething` spawns
+`prefabToSpawn` where the ray lands, `maxDistance` away at most. The overlay states the bubble's
+own reach rather than how far the shot carries, so the figure describes the thing you create -
+the same choice the Chain Launcher's bare reach makes. Nothing else in the database uses that
+component.
+
+The balloon family is the case that still deserves the destroyed mark: Balloon, Balloon Bunch,
+Basketball and Warpsketball all cook into `VFX_BalloonPop`, which is a particle system and a
+sound. They really do just pop.
+
+Scout's Honor also carries `CookingBehavior_SummonScoutmaster`, which nothing draws and which
+the overlay therefore does not mention.
 
 ---
 
