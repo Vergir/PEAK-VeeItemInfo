@@ -19,7 +19,7 @@
     ./tools/Dump-GameTypes.ps1 -TypePattern '^Action_'
 #>
 param(
-    [string] $Dll = 'C:\Games\Steam\steamapps\common\PEAK\PEAK_Data\Managed\Assembly-CSharp.dll',
+    [string] $Dll = "${env:ProgramFiles(x86)}\Steam\steamapps\common\PEAK\PEAK_Data\Managed\Assembly-CSharp.dll",
 
     # Exact type names to dump members for (nested types are matched on their short name).
     [string[]] $Types = @(),
