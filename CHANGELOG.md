@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1
+
+The package page only - the mod itself is identical to 2.0.0.
+
+- The gallery screenshots are served at the size they are shown and centred in their
+  columns, rather than each filling whatever width its caption gave it.
+
 ## 2.0.0
 
 Revived as VeeItemInfo, a fork of jkqt's ItemInfoDisplay 1.0.8, rebuilt to be more visual

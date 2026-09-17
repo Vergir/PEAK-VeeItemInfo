@@ -27,7 +27,7 @@ Four sections, each of which you can switch off:
 ## Gallery
 
 | | |
-|---|---|
+|:---:|:---:|
 | ![Cure-All](https://raw.githubusercontent.com/Vergir/PEAK-VeeItemInfo/master/docs/screenshots/cure_all.jpg) | ![Scout's Tenacity](https://raw.githubusercontent.com/Vergir/PEAK-VeeItemInfo/master/docs/screenshots/scouts_tenacity.jpg) |
 | **Cure-All** — nine status changes at once, each in the colour its own bar uses, and a cooking hint saying it becomes a healing cloud 4.8m across. | **Scout's Tenacity** — the amulets the latest patch added. One budget of 60 split across six statuses, ten seconds of shield, and the petrify it charges you for it. |
 | ![Napberry](https://raw.githubusercontent.com/Vergir/PEAK-VeeItemInfo/master/docs/screenshots/napberry.jpg) | ![Chain Launcher](https://raw.githubusercontent.com/Vergir/PEAK-VeeItemInfo/master/docs/screenshots/chain_launcher.jpg) |
