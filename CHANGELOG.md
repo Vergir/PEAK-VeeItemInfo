@@ -1,16 +1,19 @@
 # Changelog
 
 ## 2.0.0
-- Revived as VeeItemInfo, a fork of jkqt's ItemInfoDisplay 1.0.8.
-- New mod GUID (`com.github.vergir.VeeItemInfo`) and config section (`VeeItemInfo`) - existing ItemInfoDisplay settings will not carry over.
-- Fixed the overlay going completely blank on items carrying a status added since PEAK 1.x
-  (Spores, Web, Arrow, Petrify, FlyTrap). These had no colour assigned, and the resulting
-  error aborted the whole description. Unknown statuses now fall back to a neutral colour.
-- A game update that renames one patched method no longer stops the whole mod from loading;
-  only the affected hook is lost.
-- The overlay is now created when the HUD initialises rather than by searching for it every frame.
-- Internal: split the single 861-line Plugin.cs into focused files, and moved all update
-  logic behind one entry point so the Harmony patches only signal, never do work.
+
+Revived as VeeItemInfo, a fork of jkqt's ItemInfoDisplay 1.0.8, rebuilt to be more visual
+and updated to the latest patch
+
+- The overlay is symbols rather than sentences, and it sits above the inventory slot
+  holding the item instead of in a corner of the screen.
+- Four sections - item-specific facts, effects, cooking, weight - each hideable.
+- Status icons are scraped from the running HUD and tinted with the status bars' own
+  colours, so the overlay matches what the bars show.
+- A cooking hint saying whether one more turn on the fire helps the item or ruins it.
+- Every figure is read out of the game rather than typed in, so items the original never
+  described are covered and a patch that changes a value does not make the mod lie.
+- Configurable status scale, distance units, Shroomberry spoilers and placement.
 
 ---
 
