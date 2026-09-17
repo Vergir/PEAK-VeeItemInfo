@@ -80,6 +80,15 @@ means cleanup did not run.
 overlay draws: Debug Logging on, hold an item, copy the generated file over it. It is served
 to readers by GitHub Pages from `docs/` on `master`.
 
+## AI usage
+
+Stated plainly, since anyone reading the source may want to know: AI was used heavily here —
+writing and refactoring the code, working out how PEAK actually behaves, and drafting the
+documents, the commit messages, and this sentence.
+
+None of the artwork is AI-generated. The icon and every screenshot are captures from the
+running game, and the one bundled asset is cropped from PEAK's own art.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

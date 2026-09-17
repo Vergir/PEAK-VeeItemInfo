@@ -50,11 +50,21 @@ mod or the base game. The two pair well.*
 - **Advanced** — the once-a-second re-check, which is what lets you read an item in another
   player's hands as they swap it, and debug logging.
 
+## AI usage
+
+Being upfront about it: AI was used heavily on this mod — writing the code, working out how
+the game actually behaves, and drafting the text you are reading, this sentence included.
+
+It was not used to make any artwork. The icon and every screenshot above are captures from
+the game itself.
+
 ## Credits
 
 Original ItemInfoDisplay by **jkqt**; this fork by **vergir**. Source, and the reasoning
 behind every symbol above, at
 <https://github.com/Vergir/PEAK-VeeItemInfo>.
+
+Not affiliated with, endorsed by, or sponsored by Landfall Publishing or Aggro Crab Games.
 
 MIT licensed, source code only. The mod ships PEAK's own artwork under the terms in
 `assets/NOTICE.md`, included in this package. Everything else it draws is borrowed from

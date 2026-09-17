@@ -1,11 +1,16 @@
-Note on bundled artwork
------------------------
+Note on artwork and screenshots
+-------------------------------
 
 The MIT terms below cover the SOURCE CODE of this project only.
 
 Files under assets/ are artwork from the game PEAK, copyright Aggro Crab and Landfall
 Games, and are NOT licensed under the MIT terms below. See assets/NOTICE.md for what
 is there, why, and what you may and may not do with it.
+
+Files under docs/screenshots/, and icon.png, are screenshots of PEAK. What they show is
+copyright Aggro Crab and Landfall Games and is likewise NOT licensed under the MIT terms
+below. They are here to show the mod running, which is what a screenshot of a game is
+ordinarily for; nothing in this repository grants you rights over what they depict.
 
 MIT License
 
