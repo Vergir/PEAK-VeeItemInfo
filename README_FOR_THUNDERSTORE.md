@@ -52,8 +52,8 @@ mod or the base game. The two pair well.*
 
 ## AI usage
 
-Being upfront about it: AI was used heavily on this mod — writing the code, working out how
-the game actually behaves, and drafting the text you are reading, this sentence included.
+AI was used heavily on this mod: writing the code, working out how the game actually
+behaves, and drafting the documentation, this line included.
 
 It was not used to make any artwork. The icon and every screenshot above are captures from
 the game itself.

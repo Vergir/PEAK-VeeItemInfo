@@ -82,11 +82,10 @@ to readers by GitHub Pages from `docs/` on `master`.
 
 ## AI usage
 
-Stated plainly, since anyone reading the source may want to know: AI was used heavily here —
-writing and refactoring the code, working out how PEAK actually behaves, and drafting the
-documents, the commit messages, and this sentence.
+AI was used heavily on this project: writing and refactoring the code, working out how PEAK
+actually behaves, and drafting the documents, the commit messages, and this line.
 
-None of the artwork is AI-generated. The icon and every screenshot are captures from the
+It was not used to make any artwork. The icon and every screenshot are captures from the
 running game, and the one bundled asset is cropped from PEAK's own art.
 
 ## Licence
